@@ -27,10 +27,19 @@ A DSH plugin that generates and edits images through the OpenRouter Image API. I
 
 ## Installation
 
+From a local directory:
+
 ```powershell
-[Console]::OutputEncoding = [System.Text.Encoding]::UTF8
 dsh plugin --profile desktop add X:\github\dsh-openrouter-imagen-v2
 ```
+
+Or from a Git repository:
+
+```powershell
+dsh plugin --profile desktop add git+https://github.com/fancyui/dsh-openrouter-imagen-v2.git
+```
+
+The Git channel requires `git` on PATH. If a release-delay policy (`minimumReleaseAge`) in your pnpm configuration blocks dependency resolution, append `--config.minimum-release-age=0`; arguments are passed through to pnpm unchanged.
 
 Then **restart DSH** and reload the page; **图像生成 / Image** appears under the "Plugins" group in the sidebar.
 

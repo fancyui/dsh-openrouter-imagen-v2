@@ -27,10 +27,19 @@
 
 ## 安装
 
+从本地目录安装：
+
 ```powershell
-[Console]::OutputEncoding = [System.Text.Encoding]::UTF8
 dsh plugin --profile desktop add X:\github\dsh-openrouter-imagen-v2
 ```
+
+或从 Git 仓库安装：
+
+```powershell
+dsh plugin --profile desktop add git+https://github.com/fancyui/dsh-openrouter-imagen-v2.git
+```
+
+Git 安装需要系统可用 `git`。若 pnpm 配置了发布延迟策略（`minimumReleaseAge`）导致依赖解析被拦，在命令后追加 `--config.minimum-release-age=0` 即可，参数会原样透传给 pnpm。
 
 安装后**重启 DSH** 并刷新页面，侧栏「插件」组下出现 **图像生成**。
 

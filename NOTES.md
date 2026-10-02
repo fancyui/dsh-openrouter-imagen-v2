@@ -543,6 +543,23 @@ join(homedir(), '.dsh', 'openrouter-imagen-v2')
 
 ## 依赖与打包备忘
 
+- **git 安装通道**：`dsh plugin --profile desktop add git+https://github.com/fancyui/dsh-openrouter-imagen-v2.git`
+  也是官方支持的安装方式（`parseInstallSpec` 识别 `git+`/`github:`/裸 https 仓库 URL 三种写法）。
+  查证过的三个事实：
+  - **CLI 只解析自己的子命令，其余参数原样透传给 pnpm**（`runProfilePnpm` 里 `execa("pnpm", [...args])`，
+    只有本地路径会被锚定改写）。所以 `--config.minimum-release-age=0` 这类 pnpm 旗标可以直接写在
+    `dsh plugin add` 后面。
+  - **`minimum-release-age` 与宿主无关**：整个 DSH 源码树里没有这个配置名，宿主不设发布延迟策略；
+    它是 pnpm 自己的供应链设置，只作用于 registry 版本解析（git ref 不受影响）。
+    本包依赖（undici 8.10.0、@deepseek-ai/* 4.0.4/0.2.0-rc.1 等）发布均已超过一年，默认配置下不会被拦。
+    只有用户自己的 pnpm 全局配置设了 `minimumReleaseAge` 才需要加这个旗标。
+  - **带 prepare/build 脚本的 git 包会被 pnpm 11 拦**，CLI 报错时会提示把 key 加进 profile 的
+    `pnpm-workspace.yaml` 的 `allowBuilds`。本包没有任何生命周期脚本，不涉及。
+- **git 安装用的是仓库内容，不是工作区**：`package.json` 的 `files` 白名单（`lib`/`skills`/
+  `cordis.patch.yml`/两份 README/LICENSE）决定打进包里的东西，所以**先提交推送再装**；
+  `lib/image-size.js` 这类新文件没提交的话，git 装出来的包里就没有。
+- `repository` 字段曾指向不带 `-v2` 的 v1 仓库地址（复制自 v1），已改为
+  `git+https://github.com/fancyui/dsh-openrouter-imagen-v2.git`（仓库已确认存在）。
 - `undici` 走普通解析，**必须能在包内找到**（`@deepseek-ai/*` 由宿主拦截）。
   v1 踩过：app 升级后 junction 链断掉，插件整个挂不上。
 - 手动挂载必须用 **junction 而不是符号链接**：ESM 按真实路径解析依赖，符号链接会让包内的

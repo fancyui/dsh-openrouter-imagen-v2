@@ -22,7 +22,7 @@
   ],
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/fancyui/dsh-openrouter-imagen.git"
+    "url": "git+https://github.com/fancyui/dsh-openrouter-imagen-v2.git"
   },
   "scripts": {
     "check": "node --check lib/index.js && node --check lib/client.js && node --check lib/skills.js && node --check lib/store.js && node --check lib/image-size.js",

@@ -94,6 +94,18 @@ if (typeof clientPath === 'string') {
   // detour, so it is a contract worth pinning.
   check('the client explains an unmounted plugin instead of reporting a bare status',
     source.includes('没有挂载') && source.includes('重启 DSH'))
+  // The stylesheet is a TEMPLATE LITERAL, so a backtick inside a CSS comment
+  // ends it early and the whole bundle fails to parse — the plugin then does not
+  // mount at all. Scope the check to the CSS literal itself: backticks in the
+  // JSDoc above are fine and would otherwise be false positives.
+  const cssStart = source.indexOf('const CSS')
+  const cssEnd = cssStart < 0 ? -1 : source.indexOf('`', source.indexOf('`', cssStart) + 1)
+  const cssLiteral = cssStart < 0 || cssEnd < 0 ? '' : source.slice(cssStart, cssEnd)
+  const cssBacktick = /\/\*[\s\S]*?`[\s\S]*?\*\//u.exec(cssLiteral)
+  check('no backtick inside a CSS comment (it would end the template literal)',
+    cssStart >= 0 && cssBacktick === null,
+    cssStart < 0 ? 'could not locate the CSS literal'
+      : cssBacktick === null ? '' : `found one near: ${JSON.stringify(cssBacktick[0].slice(0, 90))}`)
 }
 
 /**

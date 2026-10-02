@@ -233,7 +233,26 @@ const renderToHtml = (node) => {
     // naive stringification.
     if (value === false) continue
     if (value === true) { attrs.push(key); continue }
-    const name = key === 'className' ? 'class' : key === 'htmlFor' ? 'for' : key
+    // React's SVG attribute names are camelCase (`stopColor`, `clipPath`,
+    // `strokeWidth`) and React rewrites them to the hyphenated form. Passing
+    // them through verbatim produced `<stop stopColor=…>`, which the browser
+    // ignores — every gradient then painted BLACK, and the preview looked like
+    // a broken icon when the real app was fine.
+    const SVG_PROPS = {
+      stopColor: 'stop-color', stopOpacity: 'stop-opacity',
+      clipPath: 'clip-path', clipRule: 'clip-rule',
+      strokeWidth: 'stroke-width', strokeLinecap: 'stroke-linecap',
+      strokeLinejoin: 'stroke-linejoin', strokeDasharray: 'stroke-dasharray',
+      fillOpacity: 'fill-opacity', fillRule: 'fill-rule',
+      strokeOpacity: 'stroke-opacity', textAnchor: 'text-anchor',
+      gradientUnits: 'gradientUnits', patternUnits: 'patternUnits',
+      maskUnits: 'maskUnits', markerWidth: 'markerWidth',
+      xlinkHref: 'xlink:href', xmlnsXlink: 'xmlns:xlink',
+      fontSize: 'font-size', fontFamily: 'font-family', fontWeight: 'font-weight',
+    }
+    const name = key === 'className' ? 'class'
+      : key === 'htmlFor' ? 'for'
+      : SVG_PROPS[key] ?? key
     attrs.push(`${name}="${escapeHtml(value)}"`)
   }
   const open = `<${type}${attrs.length > 0 ? ` ${attrs.join(' ')}` : ''}>`
@@ -243,6 +262,43 @@ const renderToHtml = (node) => {
 
 const workspaceTree = await mountStable(moduleExports.Workspace ?? mainView.component)
 const workspaceHtml = renderToHtml(workspaceTree)
+
+/* ------------------------------------------------------------------ *
+ * the sidebar, as the SHELL builds it
+ *
+ * `PanelRow` is ONE button whose glyph column holds
+ * `renderSlot('sidebar.panellist', …, { only: id })` and whose next child is
+ * the registered `label`. Reproducing that wrapper here is the whole point: the
+ * entry is judged by how it sits beside the shell's own rows and by what the
+ * shell's button already covers, and a preview that dropped the wrapper passed
+ * happily while the real sidebar was misaligned and the label unclickable.
+ *
+ * `PanelRow` hands the glyph `size: wide ? 16 : 18`, so 16px is the icon column
+ * width every other entry uses while labels are shown.
+ */
+const shellRow = (label, glyph, active) =>
+  `<button type="button" class="shell-row${active === true ? ' is-active' : ''}" aria-label="${escapeHtml(label)}">`
+  + `<span class="shell-glyph" aria-hidden="true">${glyph}</span>`
+  + `<span class="shell-title">${escapeHtml(label)}</span></button>`
+
+/** Stand-in for the shell's own glyph (the MCP connector tiles). Geometry is
+    the thing under review here; the artwork only has to be a 16px tile. */
+const SHELL_GLYPH = '<svg class="shell-svg" viewBox="0 0 24 24" aria-hidden="true">'
+  + '<rect x="2.5" y="2.5" width="8.5" height="8.5" rx="2.4" fill="#f2a93b"/>'
+  + '<rect x="13" y="2.5" width="8.5" height="8.5" rx="2.4" fill="#4f7ff0"/>'
+  + '<rect x="2.5" y="13" width="8.5" height="8.5" rx="2.4" fill="#63c37a"/>'
+  + '<rect x="13" y="13" width="8.5" height="8.5" rx="2.4" fill="#9a6be8"/></svg>'
+
+// The sidebar entry, rendered for real — this is what the doubled label showed
+// up in, and only the DOM (not the source) can tell us it is gone.
+const entryHtml = renderToHtml(entry.component({ ctx: { on: () => () => {}, get: () => undefined } }))
+
+const sidebarHtml = `<div class="shell-root">`
+  + `<div class="shell-group"><svg class="shell-svg" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.6">`
+  + `<path d="M12 3l1.9 4.6L18.5 9.5 13.9 11.4 12 16l-1.9-4.6L5.5 9.5l4.6-1.9z"/></svg>插件</div>`
+  + `${shellRow('MCP 连接器', SHELL_GLYPH)}`
+  + `${shellRow('图像生成', entryHtml, true)}`
+  + `</div>`
 
 check('the workspace renders a root element', workspaceHtml.includes('dsh-iv-root'))
 check('it renders the two-column split (left + splitter + right)',
@@ -372,7 +428,7 @@ check('the header reports the model this call will really use',
 // attachment store. The client is the only side that knows the directory, so it
 // has to send it.
 check('the generate request carries the session directory',
-  /api\('generate'[\s\S]{0,600}cwd: sessionCwd\(\)/u.test(clientSource),
+  /api\('generate'[\s\S]{0,1200}cwd: sessionCwd\(\)/u.test(clientSource),
   'without cwd the Host cannot resolve saveDir and falls back to attachments')
 check('the session directory is read through ctx.get, not ctx.sessions',
   clientSource.includes("ctx?.get?.('sessions')")
@@ -384,6 +440,143 @@ check('a failure to read the session list degrades to empty, not a crash',
   /const sessionCwd = React\.useCallback\(\(\) => \{\s*try \{[\s\S]{0,900}\} catch \{\s*return ''\s*\}/u.test(clientSource))
 check('the main view receives the client context (it is what exposes sessions)',
   /slots\.register\(\{ name: 'main', key: PANEL_KEY \}, \(\) => h\(Workspace, \{ ctx \}\)\)/u.test(clientSource))
+
+// --- the sidebar row: aligned, clickable, and labelled exactly once ----------
+//
+// `sidebar.panellist` already draws the registered `label`, so the entry's own
+// text made the sidebar read "图像生成 图像生成". Assert on the RENDERED entry:
+// grepping the source would pass on a dead CSS rule.
+const visibleText = (html) => html.replace(/<[^>]*>/gu, '')
+check('the sidebar entry draws no text of its own',
+  !visibleText(entryHtml).includes('图像生成'),
+  `the shell draws \`label\`; repeating it here doubles the sidebar text (rendered: ${JSON.stringify(entryHtml)})`)
+check('the sidebar entry still supplies an icon',
+  entryHtml.includes('dsh-iv-entryicon') && entryHtml.includes('<svg'))
+check('the sidebar registration still carries the label once',
+  /slots\.register\(\{ name: 'sidebar\.panellist'[\s\S]{0,200}label: '图像生成'/u.test(clientSource),
+  'dropping the text is only safe while the registration keeps the label')
+
+// (1) LEFT ALIGNED. The shell's `PanelRow` is already the row: a flex button
+// with its own padding and an 8px gap. A second, full-width button nested in
+// the glyph column stretched that column and pushed the label right — the row
+// stopped lining up with its neighbours. So the entry must contribute a bare
+// glyph and add no geometry of its own.
+check('the sidebar entry is a bare glyph, not a second button',
+  entryHtml.startsWith('<span class="dsh-iv-entryicon">') && !entryHtml.includes('<button'),
+  `a <button> inside the shell's <button> is invalid HTML and re-drew the row (rendered: ${JSON.stringify(entryHtml)})`)
+check('the entry glyph takes no width, padding or margin of its own',
+  (() => {
+    const rule = /\.dsh-iv-entryicon\{([^}]*)\}/u.exec(clientSource)
+    if (rule === null) return false
+    return !/padding|margin|width:100%|flex:1/u.test(rule[1])
+  })(),
+  'any of those re-draws the row and pushes the label out of line with the others')
+check('the entry glyph is exactly the shell\'s icon column (16px)',
+  /\.dsh-iv-entryicon\{[^}]*width:16px/u.test(clientSource)
+  && /\.dsh-iv-entryicon svg\{[^}]*width:16px/u.test(clientSource),
+  'the shell asks its glyphs for 16px while labels show; a wider column offsets every label')
+
+// (2) CLICKING THE TEXT OPENS THE PLUGIN. The shell's row button is the only
+// thing that calls `layout.selectPanel(id)` — and it THROWS for an id no `main`
+// entry answers to (`main panel "…" is not registered`). The id and the main key
+// are the same string, so the click on the icon and the click on the words take
+// the same path. These two used to differ, which is why the words did nothing.
+check('the sidebar row id and the main slot key are the same string',
+  entry.options.id === mainView.options.key,
+  `the row clicked selects ${JSON.stringify(entry.options.id)} but only ${JSON.stringify(mainView.options.key)} is registered as a main panel, so layout.selectPanel throws and the label does nothing`)
+check('both registrations derive that id from the one constant',
+  /slots\.register\(\{ name: 'sidebar\.panellist', id: PANEL_KEY/u.test(clientSource)
+  && /slots\.register\(\{ name: 'main', key: PANEL_KEY \}/u.test(clientSource),
+  'two literals drifted apart once already; one constant cannot')
+
+// (3) NO DUPLICATED TEXT, and nothing left behind that could re-add it.
+check('the dead text/badge classes for the entry are gone',
+  !clientSource.includes('dsh-iv-entrytxt') && !clientSource.includes('dsh-iv-entrybadge')
+  && !/\.dsh-iv-entry\{/u.test(clientSource),
+  'they styled a label this component no longer renders')
+check('the shell row the entry lands in carries the label once',
+  (sidebarHtml.match(/>图像生成</gu) ?? []).length === 1,
+  `the rendered sidebar must read one label (rendered: ${JSON.stringify(sidebarHtml)})`)
+
+// --- seed moved beside the model picker, and now reports what was used -------
+check('the seed control no longer sits in the parameters area',
+  !/dsh-iv-label' \}, '种子'/u.test(clientSource),
+  'one seed control only — two would fight over the same setting')
+check('the seed box sits on the composer row next to the model picker',
+  /dsh-iv-callmodellabel' \}, '种子'[\s\S]{0,400}dsh-iv-seedin/u.test(clientSource))
+// A seed is a number: the box is sized for the digits it holds, not for the
+// row, and the 随机 button shares that same line instead of wrapping below it.
+// The selector must name the ELEMENT, because `input.dsh-iv-in{width:100%}`
+// outranks a bare class: writing `.dsh-iv-seedin` alone leaves the box full
+// width and 随机 wraps — which is exactly what happened, and a check that only
+// looked for the declaration still passed while the render was wrong.
+check('the seed box is sized for a number, not the whole row',
+  /input\.dsh-iv-seedin\{[^}]*width:86px/u.test(clientSource),
+  'a full-width box pushes 随机 onto its own line and wastes the row')
+check('the seed box wins over the shared full-width input rule',
+  // Specificity is scored PER SELECTOR and the best one wins — a grouped rule
+  // like `input.dsh-iv-in,select.dsh-iv-in,…` must not be counted as one long
+  // selector, or a perfectly good rule looks like a loser.
+  (() => {
+    const score = (one) => (one.match(/\./gu) ?? []).length + (/(^|\s|,)[a-z]+/u.test(one) ? 1 : 0)
+    const best = (list) => Math.max(...list.split(',').map((part) => score(part.trim())))
+    const shared = /(^|\n)([^{}\n]*\.dsh-iv-in[^{}\n]*)\{[^}]*width:100%/u.exec(clientSource)
+    const seed = /(^|\n)([^{}\n]*dsh-iv-seedin[^{}\n]*)\{/u.exec(clientSource)
+    if (shared === null || seed === null) return false
+    return best(seed[2]) >= best(shared[2])
+  })(),
+  'a class-only rule loses to input.dsh-iv-in and the box stays full width')
+check('the seed box and 随机 share one line',
+  /dsh-iv-callmodellabel' \}, '种子'[\s\S]{0,900}?\}, '随机'\)\)/u.test(clientSource),
+  'both must sit inside the same row, or 随机 wraps to a line of its own')
+check('the seed box caps its length at the digits a seed can have',
+  /maxLength: 10/u.test(clientSource))
+check('the seed this call used is written back to the box',
+  /setSeedDraft\(String\(res\.seed\)\)/u.test(clientSource),
+  'a drawn seed is otherwise lost the moment it scrolls by')
+check('the drawn seed is persisted, so the next call can reproduce it',
+  /res\.seed[\s\S]{0,200}saveSeed\(/u.test(clientSource))
+
+// --- reference images: picker, paste and drop --------------------------------
+check('the + button actually opens a file picker',
+  /dsh-iv-refadd[\s\S]{0,300}fileRef\.current\?\.click\(\)/u.test(clientSource),
+  'it was a placeholder with no onClick at all')
+check('only image files are accepted',
+  clientSource.includes("accept: 'image/*'"))
+// The hidden picker must be hidden by a CLASS. An inline `style={{display:'none'}}`
+// is silently dropped by this file's renderer (it skips object-valued props), so
+// the raw <input type=file> shows up in the preview as a "Choose Files" control.
+check('the file input is hidden by a class, not an inline style',
+  clientSource.includes("className: 'dsh-iv-filein'")
+  && clientSource.includes('.dsh-iv-filein{display:none}')
+  && !/type: 'file'[\s\S]{0,200}style: \{/u.test(clientSource),
+  'an inline display:none renders the raw file input visibly in the preview')
+check('pasted images become references',
+  /onPaste:[\s\S]{0,300}addRefFiles/u.test(clientSource))
+check('dropped images become references',
+  /onDrop:[\s\S]{0,300}addRefFiles/u.test(clientSource))
+check('a pasted block of TEXT is left alone',
+  /imageFilesFrom[\s\S]{0,900}startsWith\('image\/'\)/u.test(clientSource),
+  'only real image files may be turned into references')
+check('the reference list is capped at the API limit',
+  clientSource.includes('MAX_REFS = 4'))
+check('references are sent with the generate request',
+  /api\('generate'[\s\S]{0,900}reference_images: refs\.map/u.test(clientSource),
+  'collecting references but not sending them would look exactly like this bug')
+check('references are sent with the PROMPT request as well',
+  /api\('prompt'[\s\S]{0,900}reference_images: refs\.map/u.test(clientSource),
+  'refine mode writes the prompt on the Host; without references there the prompt cannot mention the image')
+check('the prompt request carries the per-call model and the session cwd too',
+  /api\('prompt'[\s\S]{0,900}model: pickModel\(\)[\s\S]{0,200}cwd: sessionCwd\(\)/u.test(clientSource),
+  'otherwise the picker under the composer and the save directory are ignored in refine mode')
+check('the prompt request is rebuilt when the reference list changes',
+  /api\('prompt'[\s\S]{0,2000}\}, \[refs, pickModel, sessionCwd\]\)/u.test(clientSource),
+  'a stale closure would send the first render\'s (empty) reference list')
+check('writing a prompt says how many references it is using',
+  clientSource.includes('正在写提示词 · 带 ${refs.length} 张参考图'),
+  'the user must be able to tell "wrote blind" from "ignored my reference"')
+check('a reference can be removed again',
+  /setRefs\(\(prev\) => prev\.filter/u.test(clientSource))
 
 // Render the override state for real, rather than only grepping for the branch.
 // The pick is component state with no seeding prop, so mount a copy of the
@@ -431,13 +624,23 @@ const TOKENS = `:root{
 }
 body{margin:0;background:#e9eaee;font-family:"Segoe UI","Microsoft YaHei",system-ui,sans-serif}
 .shell{display:flex;height:840px;margin:20px;border:1px solid var(--dsw-alias-border-l2);border-radius:14px;overflow:hidden;background:#fff;box-shadow:0 10px 30px rgba(15,23,42,.10)}
-.side{width:238px;flex:0 0 238px;background:#f7f7f8;border-right:1px solid var(--dsw-alias-border-l1);padding:14px 8px}
-.side h4{margin:0 6px 8px;font-size:11px;letter-spacing:.04em;text-transform:uppercase;color:var(--dsw-alias-label-secondary)}
+.side{width:238px;flex:0 0 238px;background:#f7f7f8;border-right:1px solid var(--dsw-alias-border-l1)}
 .mainpane{flex:1 1 auto;min-width:0;display:flex;flex-direction:column}
+/* The shell's own sidebar rules, copied from SidebarRoot.module.css so the row
+   the entry lands in is measured, not approximated: same padding, same 8px
+   gap, same 16px glyph column. A preview that guessed at these would have
+   called a misaligned row aligned. */
+.shell-root{--dsh-sidebar-inline-padding:12px;height:100%;padding:6px var(--dsh-sidebar-inline-padding);box-sizing:border-box;color:var(--dsw-alias-label-primary);font-size:14px;display:flex;flex-direction:column}
+.shell-group{display:flex;align-items:center;gap:8px;padding:7px 10px;font-size:13px;font-weight:600;color:var(--dsw-alias-label-secondary)}
+.shell-row{box-sizing:border-box;border-radius:8px;min-height:36px;color:var(--dsw-alias-label-primary);font:inherit;text-align:left;cursor:pointer;background:0 0;border:none;align-items:center;gap:8px;margin:0 2px;padding:7px 8px;line-height:22px;display:flex;width:100%}
+.shell-row:hover,.shell-row.is-active{background:var(--dsw-alias-bg-layer-2)}
+.shell-glyph{flex:none;justify-content:center;align-items:center;display:inline-flex}
+.shell-title{text-overflow:ellipsis;white-space:nowrap;min-width:0;overflow:hidden}
+.shell-svg{width:16px;height:16px;display:block}
 `
 
 writeFileSync(join(OUT, 'workspace.html'),
-  `<!doctype html>\n<html lang="zh-CN">\n<head>\n<meta charset="utf-8">\n<title>dsh-openrouter-imagen v2 — 工作台（真实组件渲染）</title>\n<style>${TOKENS}\n${styles.join('\n')}\n</style>\n</head>\n<body>\n<div class="shell">\n<div class="side"><h4>插件</h4>${renderToHtml(entry.component({ ctx: { on: () => () => {}, get: () => undefined } }))}</div>\n<div class="mainpane">${workspaceHtml}</div>\n</div>\n</body>\n</html>\n`,
+  `<!doctype html>\n<html lang="zh-CN">\n<head>\n<meta charset="utf-8">\n<title>dsh-openrouter-imagen v2 — 工作台（真实组件渲染）</title>\n<style>${TOKENS}\n${styles.join('\n')}\n</style>\n</head>\n<body>\n<div class="shell">\n<div class="side">${sidebarHtml}</div>\n<div class="mainpane">${workspaceHtml}</div>\n</div>\n</body>\n</html>\n`,
   'utf8')
 
 // A second page: the same workspace with the settings dialog open. Rendered
@@ -472,17 +675,21 @@ check('the advanced tab names the prompt model and the save directory',
   dialogAdvancedHtml.includes('写提示词的文本模型')
   && dialogAdvancedHtml.includes('保存目录')
   && dialogAdvancedHtml.includes(CONFIG.promptModel))
+check('the prompt-model help says a reference needs vision to be seen',
+  dialogAdvancedHtml.includes('带视觉')
+  && dialogAdvancedHtml.includes('纯文本模型也能用'),
+  'a user who typed a text-only model must know references go in unseen, not silently ignored')
 
 writeFileSync(join(OUT, 'settings.html'),
-  `<!doctype html>\n<html lang="zh-CN">\n<head>\n<meta charset="utf-8">\n<title>dsh-openrouter-imagen v2 — 设置弹窗（真实组件渲染）</title>\n<style>${TOKENS}\n${styles.join('\n')}\n</style>\n</head>\n<body>\n<div class="shell">\n<div class="side"><h4>插件</h4>${renderToHtml(entry.component({ ctx: { on: () => () => {}, get: () => undefined } }))}</div>\n<div class="mainpane">${workspaceHtml}</div>\n</div>\n${dialogNoKeyHtml}\n</body>\n</html>\n`,
+  `<!doctype html>\n<html lang="zh-CN">\n<head>\n<meta charset="utf-8">\n<title>dsh-openrouter-imagen v2 — 设置弹窗（真实组件渲染）</title>\n<style>${TOKENS}\n${styles.join('\n')}\n</style>\n</head>\n<body>\n<div class="shell">\n<div class="side">${sidebarHtml}</div>\n<div class="mainpane">${workspaceHtml}</div>\n</div>\n${dialogNoKeyHtml}\n</body>\n</html>\n`,
   'utf8')
 
 writeFileSync(join(OUT, 'settings-models.html'),
-  `<!doctype html>\n<html lang="zh-CN">\n<head>\n<meta charset="utf-8">\n<title>dsh-openrouter-imagen v2 — 设置 · 模型</title>\n<style>${TOKENS}\n${styles.join('\n')}\n</style>\n</head>\n<body>\n<div class="shell">\n<div class="side"><h4>插件</h4>${renderToHtml(entry.component({ ctx: { on: () => () => {}, get: () => undefined } }))}</div>\n<div class="mainpane">${workspaceHtml}</div>\n</div>\n${dialogModelsHtml}\n</body>\n</html>\n`,
+  `<!doctype html>\n<html lang="zh-CN">\n<head>\n<meta charset="utf-8">\n<title>dsh-openrouter-imagen v2 — 设置 · 模型</title>\n<style>${TOKENS}\n${styles.join('\n')}\n</style>\n</head>\n<body>\n<div class="shell">\n<div class="side">${sidebarHtml}</div>\n<div class="mainpane">${workspaceHtml}</div>\n</div>\n${dialogModelsHtml}\n</body>\n</html>\n`,
   'utf8')
 
 writeFileSync(join(OUT, 'settings-advanced.html'),
-  `<!doctype html>\n<html lang="zh-CN">\n<head>\n<meta charset="utf-8">\n<title>dsh-openrouter-imagen v2 — 设置 · 高级</title>\n<style>${TOKENS}\n${styles.join('\n')}\n</style>\n</head>\n<body>\n<div class="shell">\n<div class="side"><h4>插件</h4>${renderToHtml(entry.component({ ctx: { on: () => () => {}, get: () => undefined } }))}</div>\n<div class="mainpane">${workspaceHtml}</div>\n</div>\n${dialogAdvancedHtml}\n</body>\n</html>\n`,
+  `<!doctype html>\n<html lang="zh-CN">\n<head>\n<meta charset="utf-8">\n<title>dsh-openrouter-imagen v2 — 设置 · 高级</title>\n<style>${TOKENS}\n${styles.join('\n')}\n</style>\n</head>\n<body>\n<div class="shell">\n<div class="side">${sidebarHtml}</div>\n<div class="mainpane">${workspaceHtml}</div>\n</div>\n${dialogAdvancedHtml}\n</body>\n</html>\n`,
   'utf8')
 
 console.log('')

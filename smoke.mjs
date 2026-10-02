@@ -411,6 +411,55 @@ check('a reference file outside the session workspace is refused', rejectedEscap
     'without cwd here, saveDir cannot resolve and bytes go to the attachment store')
 }
 
+/* ---- references must reach BOTH the prompt model and the image model ---- */
+
+/**
+ * The bug this pins: `POST /prompt` read only `request`/`context`, so an
+ * attached reference never reached the prompt model — and because the same call
+ * also GENERATES when the confirm switch is off, the reference never reached the
+ * image API either. The picture came out looking like a fresh text-to-image
+ * result, and the prompt described a picture the user was not asking for.
+ *
+ * The `/prompt` leg needs a live HTTP round trip against OpenRouter, which this
+ * harness cannot do without stubbing `undici` (and stubbing it would test the
+ * stub). So what is pinned here is the wiring and the two pure decisions, which
+ * is where this actually broke: the route must normalise the references once and
+ * hand the SAME list to both the text model and the image call.
+ */
+{
+  const hostSource = readFileSync(new URL('./lib/index.js', import.meta.url), 'utf8')
+  const promptRoute = hostSource.match(/action === 'prompt' && method === 'POST'[\s\S]*?\n {6}if \(action === 'history'/u)?.[0] ?? ''
+
+  check('the /prompt route reads the references it is sent',
+    promptRoute.length > 0 && /referenceUrls\(input\)/u.test(promptRoute),
+    'the route must normalise reference_images, the same way /generate does')
+  check('the /prompt route hands the references to the prompt model',
+    promptRoute.length > 0 && /composePrompt\(request, input\?\.context, references\)/u.test(promptRoute),
+    'without this, the prompt model never learns a reference exists')
+  check('the /prompt route sends the references to the IMAGE model too',
+    promptRoute.length > 0 && /generate\(\s*\{ prompt, request, model, references \}/u.test(promptRoute),
+    'refine mode generates from this same call; dropping the references here silently discards them')
+  check('the /prompt route passes the per-call model and cwd through as well',
+    promptRoute.length > 0 && /const model = String\(input\?\.model/u.test(promptRoute)
+    && /const cwd = sessionCwdFrom\(input\)/u.test(promptRoute)
+    && /\{ withDataUrl: true, cwd \}/u.test(promptRoute),
+    'the model picker and the save directory were ignored in refine mode')
+
+  check('the prompt instruction names the reference rule when one is attached',
+    /count > 0 \? \['', `IMPORTANT — \$\{count\} reference image/u.test(hostSource),
+    'the rule is only worth its tokens when a reference is actually attached')
+  check('the prompt model is shown the reference images, not just told about them',
+    /type: 'image_url', image_url: \{ url \}/u.test(hostSource),
+    'a text model told "3 references attached" and shown none cannot write a prompt that uses them')
+  check('a prompt model without vision still gets a prompt',
+    /if \(refs\.length === 0\) throw error[\s\S]{0,120}ask\(false\)/u.test(hostSource),
+    'a text-only prompt model rejects image parts; the prompt must not be lost over it')
+  check('the blind fallback tells the model it cannot see the reference',
+    hostSource.includes('you cannot see it, and guessing its contents')
+    || hostSource.includes('You cannot see it, and guessing its contents'),
+    'a model that guesses a reference it never saw contradicts the image')
+}
+
 /* ---- the request body builder ---- */
 
 // `auto` means OMIT, not "send the string auto": the provider's own default is

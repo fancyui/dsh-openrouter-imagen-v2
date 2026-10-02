@@ -237,6 +237,20 @@ check('the tool exposes save_dir and file_name, the two that make「生图然后
 check('prompt stays the only required field', JSON.stringify(tools[0]?.parameters?.required) === '["prompt"]',
   JSON.stringify(tools[0]?.parameters?.required))
 
+// What an agent may ask for is a decision, not an API limit: one picture, always
+// PNG, quality medium|high. Aspect/resolution/background stay the agent's.
+const toolProps = tools[0]?.parameters?.properties ?? {}
+check('quality offers exactly medium and high', JSON.stringify(toolProps.quality?.enum) === JSON.stringify(['medium', 'high']),
+  JSON.stringify(toolProps.quality?.enum))
+check('count is not offered at all — one picture per call', toolProps.count === undefined,
+  `count is still a field: ${JSON.stringify(toolProps.count)}`)
+check('aspect_ratio, resolution and background stay the agent to set',
+  Array.isArray(toolProps.aspect_ratio?.enum) && Array.isArray(toolProps.resolution?.enum) && Array.isArray(toolProps.background?.enum))
+check('the tool description says one PNG per call and names no count parameter',
+  String(tools[0]?.description ?? '').includes('固定出一张 PNG')
+  && String(tools[0]?.description ?? '').includes('没有 `count` 参数'),
+  'the description must state the pinned format/count so the model stops offering them')
+
 /**
  * The skill body and the tool description are two hand-written copies of ONE
  * contract. Nothing but a check stops them drifting, and the drift is invisible:
@@ -411,9 +425,10 @@ check('a reference file outside the session workspace is refused', rejectedEscap
 /* ---- save_dir and file_name: where an agent's picture lands, and what it is called ---- */
 
 /**
- * Both decisions sit AFTER the API call inside `generate`, so no tool call can be
- * used to reach them without spending a real request. They are exported as
- * decisions and tested directly — the same way `sessionCwdFrom` is.
+ * Both decisions are exported and tested directly, so they can be exercised
+ * without a request. `execute` ALSO runs them before it spends anything — the
+ * tool-level assertions below prove that, by refusing inputs that would
+ * otherwise only fail once the picture had been bought.
  *
  * The behaviour they pin is the one that makes「做网页时自动生图然后用」a single
  * step instead of three: the file must land inside the artefact's own directory,
@@ -472,12 +487,132 @@ check('a reference file outside the session workspace is refused', rejectedEscap
     /rows\.length > 1 && i > 0 \? `-\$\{i \+ 1\}` : ''/u.test(hostSource),
     'a single picture asked for by name is exactly that name')
   check('the tool hands save_dir and file_name to generate()',
-    /saveDir: typeof args\.save_dir === 'string'[\s\S]{0,160}name: typeof args\.file_name === 'string'/u.test(hostSource),
+    /saveDir: askedSaveDir[\s\S]{0,80}name: askedName/u.test(hostSource),
     'without the pass-through the two parameters reach the API and change nothing')
   check('each image carries the session-relative path the caller writes into its artefact',
     /filePathRelative = rel\.split\(sep\)\.join\('\/'\)/u.test(hostSource)
     && /相对会话目录：/u.test(hostSource),
     'the absolute path alone leaves the caller doing path arithmetic')
+}
+
+/* ---- what the result actually SAYS ---- */
+
+/**
+ * The assertion this file was missing.
+ *
+ * `render` printed the absolute path and the session-relative path on the SAME
+ * line, and the only thing covering it checked that the string「相对会话目录：」
+ * occurs in the SOURCE. The string was there — welded onto the wrong thing — so
+ * `npm run all` stayed green while the single most useful value in the result
+ * was unreadable line by line.
+ *
+ * So call the real `render`, with its real two-argument shape, and read lines.
+ */
+{
+  check('the tool exposes the renderer that builds the result text', typeof tool?.output?.render === 'function')
+
+  const renderOne = (images) => {
+    if (typeof tool?.output?.render !== 'function') return ''
+    const blocks = tool.output.render({}, {
+      ok: true,
+      model: 'test/model',
+      seed: 42,
+      seedRandom: false,
+      params: { resolution: '2K', aspect_ratio: '16:9', quality: 'high', output_format: 'png', count: 1 },
+      cost: 0.0097,
+      elapsedMs: 19000,
+      outputDir: join(dir, 'generated-images'),
+      images,
+    })
+    const block = (Array.isArray(blocks) ? blocks : []).find((entry) => entry?.type === 'text')
+    if (Array.isArray(block?.text)) return block.text.join('')
+    return String(block?.text ?? '')
+  }
+
+  const absolute = join(dir, 'generated-images', 'hero.png')
+  const single = renderOne([{ filePath: absolute, filePathRelative: 'generated-images/hero.png' }])
+  check('the absolute path prints on a line of its own', single.split('\n').includes(`文件：${absolute}`), single)
+  check('the session-relative path prints on a line of its own',
+    single.split('\n').includes('相对会话目录：generated-images/hero.png'), single)
+  check('the two paths are never welded onto one line', !/文件：[^\n]*相对会话目录：/u.test(single), single)
+
+  // The shape that actually shipped broken: only the LAST image welded, because
+  // every earlier one was rescued by the next `文件：` line bringing its own \n.
+  const batch = renderOne([
+    { filePath: join(dir, 'generated-images', 'hero.png'), filePathRelative: 'generated-images/hero.png' },
+    { filePath: join(dir, 'generated-images', 'hero-2.png'), filePathRelative: 'generated-images/hero-2.png' },
+  ])
+  check('in a two-image result BOTH relative paths get their own line',
+    !/文件：[^\n]*相对会话目录：/u.test(batch)
+    && batch.split('\n').filter((line) => line.startsWith('相对会话目录：')).length === 2,
+    batch)
+}
+
+/* ---- refusals that must cost nothing ---- */
+
+/**
+ * This file has no API key and no network. A call that reached `callApi` would
+ * fail with a key or config error instead — so getting the REFUSAL message back
+ * is itself the proof that no request was sent. Both of these used to be
+ * refused inside `generate`, i.e. after the picture had been bought.
+ */
+{
+  let badStem = ''
+  try { await callTool({ prompt: 'x', file_name: '../hero' }) } catch (error) { badStem = String(error.message) }
+  check('a file_name that climbs out is refused BEFORE any paid request',
+    badStem.includes('不接受路径'), badStem)
+
+  let badDir = ''
+  try { await callTool({ prompt: 'x', save_dir: '../outside' }) } catch (error) { badDir = String(error.message) }
+  check('a save_dir that escapes the session is refused BEFORE any paid request',
+    badDir.includes('必须留在会话工作目录内'), badDir)
+
+  let countArg = ''
+  try { await callTool({ prompt: 'x', count: 3 }) } catch (error) { countArg = String(error.message) }
+  check('count is refused as an undeclared parameter', countArg.includes('未支持的参数') && countArg.includes('count'), countArg)
+}
+
+/* ---- what the tool pins, and what the workbench keeps ---- */
+
+/**
+ * One picture, always PNG — pinned as PER-CALL values, because `buildBody` lets
+ * the caller's word beat the stored one. That precedence is the whole mechanism,
+ * so it is tested against a panel configured for something else; and the panel
+ * must still get what it asked for, or this "fix" would have quietly changed the
+ * workbench too.
+ */
+{
+  const pinProvided = {}
+  const pinCtx = {
+    effect: (fn) => { fn(); return () => {} },
+    plugin: () => {},
+    provide: (key, value) => { pinProvided[key] = value },
+    get: (key) => (key === 'webServer' ? { register: () => () => {} } : undefined),
+    inject: (names, cb) => cb({ get: () => undefined }),
+    tools: { register: () => () => {} },
+  }
+  const pinHost = await import('./lib/index.js')
+  pinHost.apply(pinCtx, stubConfig({
+    model: 'test/image-model', models: [], promptModel: 'test/text', apiKey: 'sk-or-v1-test',
+    resolution: 'auto', aspectRatio: 'auto', quality: 'auto', outputFormat: 'jpeg',
+    count: 4, background: 'auto', seed: '', confirmPrompt: false, splitRatio: 0.6,
+    paramsHeight: 236, providerSort: '', extraJson: '', saveDir: 'generated-images',
+  }))
+
+  const pinned = pinProvided.openrouterImagenV2.buildBody({ prompt: 'x', count: 1, output_format: 'png' })
+  check('a per-call count of 1 beats a panel asking for four',
+    pinned.body.n === undefined && pinned.params.count === 1, JSON.stringify(pinned.body.n))
+  check('a per-call PNG beats the panel format', pinned.body.output_format === 'png', pinned.body.output_format)
+
+  const panelSide = pinProvided.openrouterImagenV2.buildBody({ prompt: 'x' })
+  check('the workbench still gets its own count and format',
+    panelSide.body.n === 4 && panelSide.body.output_format === 'jpeg',
+    JSON.stringify({ n: panelSide.body.n, format: panelSide.body.output_format }))
+
+  const source = readFileSync(new URL('./lib/index.js', import.meta.url), 'utf8')
+  check('the tool actually pins them on the call it makes',
+    /count: AGENT_COUNT[\s\S]{0,40}output_format: AGENT_FORMAT/u.test(source),
+    'the pins must be passed into generate(), not only written in the description')
 }
 
 /* ---- where the bytes actually land ---- */

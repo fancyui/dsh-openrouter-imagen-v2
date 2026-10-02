@@ -33,15 +33,26 @@ description: Turn a request into a professional image prompt, then generate or e
 await tools.openrouter_generate_imagen_v2({
   prompt: '...',
   save_dir: 'public',      // 相对会话目录，越界会报错
-  file_name: 'hero',       // 只要主干名，扩展名按实际媒体类型自动决定
+  file_name: 'hero',       // 只要主干名，扩展名固定 .png
   aspect_ratio: '16:9',    // hero 的几何是确定的，比例应当是参数而不是提示词
 })
 // → <img src="public/hero.png">
 ```
 
-**只说「已生成」而不给路径，对使用者没有用。** 多张时 `file_name` 会自动展开成 `hero.png`、`hero-2.png`、`hero-3.png`，挑一张写进页面，其余留在目录里。
+**只说「已生成」而不给路径，对使用者没有用。**
 
 `save_dir` 只能留在会话工作目录内 —— 想写到别处，请让用户在工作台的「保存目录」里改。
+
+### 每次调用固定出一张 PNG
+
+这是插件定下的规则，不是 API 的限制：
+
+- **没有 `count` 参数**，一次调用出一张图。想要多个版本就**多次调用**，每次改提示词。
+- **扩展名固定 `.png`**，不要自己写进 `file_name`。
+- **`quality` 只能是 `medium` 或 `high`**，没有 `auto` / `low`。
+- **画幅、分辨率、背景由你决定**（`aspect_ratio` / `resolution` / `background`），留空则用工作台的设置。
+
+所以 `<img src>` 里的文件名是你自己起的那个 —— 不要指望 `hero.jpg`。
 
 ## 第一步：照用户说的媒介写
 
@@ -155,7 +166,7 @@ await tools.openrouter_generate_imagen_v2({
 - **画风不对，像照片** → 检查是不是写进了焦段、光圈、柔光箱、色温；把它们删掉。
 - **画风不对，太扁平** → 检查是不是把摄影的轴删过头了；补回该媒介真正需要的细节轴。
 - **要复现同一张** → 用 `seed` 字段固定种子，而不是把数字写进 prompt。
-- **一次出多张** → 用 `count` 字段；想比较不同构图就改提示词分次出。
+- **一次出多张** → 没有 `count` 参数，**多次调用**，每次改提示词。
 - **`save_dir must stay inside the session working directory`** → `save_dir` 写到了项目外面。改用相对会话目录的路径（如 `public`），或让用户在「保存目录」里改。
 - **图生成了但页面里显示不出来** → 检查你写进 `<img src>` 的是不是 `filePathRelative`；相对路径是相对**会话目录**的，页面在子目录里就要带上这段前缀。
 - **重新生成了同名图，页面还是旧图** → 写进页面的永远是**返回的** `filePathRelative`，不是你请求的 `file_name`：同名已存在时会自动让开成 `hero-2.png`，返回的路径才是真正写出的那个。

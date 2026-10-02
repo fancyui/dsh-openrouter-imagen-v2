@@ -569,9 +569,28 @@ check('references are sent with the PROMPT request as well',
 check('the prompt request carries the per-call model and the session cwd too',
   /api\('prompt'[\s\S]{0,900}model: pickModel\(\)[\s\S]{0,200}cwd: sessionCwd\(\)/u.test(clientSource),
   'otherwise the picker under the composer and the save directory are ignored in refine mode')
+// The dep array is read out of the source rather than matched as one literal.
+// A regex window breaks every time a dependency is added, and the thing worth
+// protecting is "every value the body reads is in the list" — not one exact
+// string. `refs` is what this caught: the array was `[]`, so refine mode sent
+// the first render's empty reference list forever.
 check('the prompt request is rebuilt when the reference list changes',
-  /api\('prompt'[\s\S]{0,2000}\}, \[refs, pickModel, sessionCwd\]\)/u.test(clientSource),
-  'a stale closure would send the first render\'s (empty) reference list')
+  (() => {
+    const start = clientSource.indexOf("api('prompt'")
+    const open = start === -1 ? -1 : clientSource.indexOf('}, [', start)
+    const deps = open === -1 ? '' : clientSource.slice(open, clientSource.indexOf(')', open))
+    return ['refs', 'pickModel', 'sessionCwd', 'saveSeed'].every((name) => deps.includes(name))
+  })(),
+  'a stale closure would send the first render\'s (empty) reference list, or drop the seed that came back')
+check('the seed that was actually used is written back to the box on BOTH generate paths',
+  (clientSource.match(/setSeedDraft\(String\(res\.seed\)\)/gu) ?? []).length === 2
+    && clientSource.includes('void saveSeed(String(res.seed)).catch(() => {})'),
+  'the refine path generates in the same call, so its seed exists only on that one response')
+check('a long prompt box scrolls instead of growing without end',
+  /\.dsh-iv-promptbody\{[^}]*overflow:auto[^}]*scrollbar-width:thin/u.test(clientSource)
+    && /\.dsh-iv-promptbody\{[^}]*max-height:min\(/u.test(clientSource)
+    && /overscroll-behavior:contain/u.test(clientSource),
+  'an overlay scrollbar has a 0px gutter on Windows: the box scrolls but shows no bar')
 check('writing a prompt says how many references it is using',
   clientSource.includes('正在写提示词 · 带 ${refs.length} 张参考图'),
   'the user must be able to tell "wrote blind" from "ignored my reference"')

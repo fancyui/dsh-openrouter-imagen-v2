@@ -105,6 +105,8 @@ check('the description says the style list is open-ended', loaded !== null && /�
 check('the skill body teaches derivation, not a lookup table', loaded !== null
   && /靠什么被认出来/u.test(loaded.body) && /它没有什么/u.test(loaded.body) && !/先定画风/u.test(loaded.body))
 check('the skill body keeps the photography-gear rule', loaded !== null && /焦段、光圈、柔光箱、色温/u.test(loaded.body))
+check('the skill description routes the「build something that needs a picture」case',
+  loaded !== null && /网页|落地页|幻灯片|README/u.test(loaded.description))
 
 /* ------------------------------------------------------------------ *
  * 3. the real host plugin against a stub context
@@ -224,10 +226,36 @@ host.apply(ctx, stubConfig({
 
 check('the plugin registers its tool', tools.length === 1 && tools[0].name === 'openrouter_generate_imagen_v2',
   tools.map((t) => t.name).join(','))
-check('the tool description carries the "only fill prompt" discipline', tools[0]?.description?.includes('默认只填'))
-check('the tool description forbids the decisions the model must not make', tools[0]?.description?.includes('这次适合出几张'))
-check('the tool exposes no aspect_ratio/resolution parameters (the panel owns them)',
-  tools[0]?.parameters?.properties?.aspect_ratio === undefined && tools[0]?.parameters?.properties?.resolution === undefined)
+check('the tool description says the agent may call it WITHOUT being asked', tools[0]?.description?.includes('用户没有说「出图」，不等于你不能出图'))
+check('the tool description still refuses the decisions the model must not make', tools[0]?.description?.includes('这次适合出几张'))
+check('the tool description tells the agent to USE the path, not just report the call', tools[0]?.description?.includes('只说「已生成」而不给路径，对使用者没有用'))
+check('the tool description spends the proactive call rule on its own paragraph', tools[0]?.description?.includes('拿不准要不要出图时，先问一句'))
+check('the tool exposes aspect_ratio/resolution as request fields the agent may fill', tools[0]?.parameters?.properties?.aspect_ratio?.enum?.includes('16:9') === true
+  && tools[0]?.parameters?.properties?.resolution?.enum?.includes('2K') === true)
+check('the tool exposes save_dir and file_name, the two that make「生图然后用」one step', typeof tools[0]?.parameters?.properties?.save_dir?.description === 'string'
+  && typeof tools[0]?.parameters?.properties?.file_name?.description === 'string')
+check('prompt stays the only required field', JSON.stringify(tools[0]?.parameters?.required) === '["prompt"]',
+  JSON.stringify(tools[0]?.parameters?.required))
+
+/**
+ * The skill body and the tool description are two hand-written copies of ONE
+ * contract. Nothing but a check stops them drifting, and the drift is invisible:
+ * the routing text sends the agent one way while the tool description tells it
+ * another, and both read as authoritative.
+ */
+{
+  const contract = [
+    ['用户没有说「出图」，不等于你不能出图', 'the proactive rule itself'],
+    ['拿不准要不要出图时，先问一句', 'the cost caveat'],
+    ['只说「已生成」而不给路径，对使用者没有用', 'the obligation to hand back a path'],
+  ]
+  const toolDescription = String(tools[0]?.description ?? '')
+  for (const [phrase, what] of contract) {
+    check(`the skill body and the tool description say the same thing about ${what}`,
+      loaded?.body?.includes(phrase) === true && toolDescription.includes(phrase),
+      'one of the two copies is missing this sentence')
+  }
+}
 check('the API route registered a prefix mount', routes.length === 1 && routes[0].kind === 'prefix' && routes[0].path === '/openrouter-imagen-v2/api',
   JSON.stringify(routes[0] ?? null))
 check('the plugin publishes a test seam', provided.openrouterImagenV2 !== undefined)
@@ -365,9 +393,92 @@ let rejectedEmpty = ''
 try { await callTool({ prompt: '   ' }) } catch (error) { rejectedEmpty = String(error.message) }
 check('the tool rejects an empty prompt', rejectedEmpty.includes('prompt 必填'), rejectedEmpty)
 
+// The wire schema is compiled from the property map, so a typo'd ratio is
+// rejected with the valid list rather than silently falling back to the panel's
+// value — which would look like the agent's own choice succeeded.
+let rejectedRatio = ''
+try { await callTool({ prompt: 'x', aspect_ratio: '16/9' }) } catch (error) { rejectedRatio = String(error.message) }
+check('a typo in aspect_ratio is rejected with the valid list, before any request', rejectedRatio.includes('16:9'), rejectedRatio)
+
+let rejectedResolution = ''
+try { await callTool({ prompt: 'x', resolution: '2k' }) } catch (error) { rejectedResolution = String(error.message) }
+check('resolution is case-sensitive, as the API is', rejectedResolution.includes('2K'), rejectedResolution)
+
 let rejectedEscape = ''
 try { await callTool({ prompt: 'x', reference_files: ['C:/Windows/System32/drivers/etc/hosts'] }) } catch (error) { rejectedEscape = String(error.message) }
 check('a reference file outside the session workspace is refused', rejectedEscape.includes('工作目录内'), rejectedEscape)
+
+/* ---- save_dir and file_name: where an agent's picture lands, and what it is called ---- */
+
+/**
+ * Both decisions sit AFTER the API call inside `generate`, so no tool call can be
+ * used to reach them without spending a real request. They are exported as
+ * decisions and tested directly — the same way `sessionCwdFrom` is.
+ *
+ * The behaviour they pin is the one that makes「做网页时自动生图然后用」a single
+ * step instead of three: the file must land inside the artefact's own directory,
+ * under the name the page will reference, and a path outside the project must be
+ * an ERROR rather than a quiet relocation — the old saveDir bug was exactly a
+ * picture that saved to somewhere nobody asked for.
+ */
+{
+  const seam = provided.openrouterImagenV2
+  const project = join(tmpdir(), 'dsh-imagen-agent-project')
+
+  const chosen = await seam.projectDirectory(project, 'public')
+  check('save_dir resolves against the session directory', chosen === join(project, 'public'), chosen)
+
+  const root = await seam.projectDirectory(project, '.')
+  check('save_dir may be the session directory itself', root === project, root)
+
+  const absoluteInside = await seam.projectDirectory(project, join(project, 'docs', 'img'))
+  check('an absolute save_dir inside the session is accepted', absoluteInside === join(project, 'docs', 'img'), absoluteInside)
+
+  let escaped = ''
+  try { await seam.projectDirectory(project, '../outside') } catch (error) { escaped = String(error.message) }
+  check('a save_dir that escapes the session is refused, not relocated', escaped.includes('必须留在会话工作目录内'), escaped)
+
+  let escapedAbsolute = ''
+  try { await seam.projectDirectory(project, join(tmpdir(), 'somewhere-else')) } catch (error) { escapedAbsolute = String(error.message) }
+  check('an absolute save_dir outside the session is refused too', escapedAbsolute.includes('必须留在会话工作目录内'), escapedAbsolute)
+
+  let withoutCwd = ''
+  try { await seam.projectDirectory(undefined, 'public') } catch (error) { withoutCwd = String(error.message) }
+  check('save_dir without a session directory is refused rather than guessed', withoutCwd.includes('save_dir 需要会话工作目录'), withoutCwd)
+
+  // No save_dir is the workbench's business: it must still fall back to the
+  // configured folder, unchanged by any of this.
+  const configured = await seam.projectDirectory(project)
+  check('no save_dir still lands in the configured folder', configured === join(project, 'generated-images'), configured)
+
+  check('file_name is kept as a bare stem', seam.fileStem('hero') === 'hero')
+  check('file_name with characters no filesystem accepts is cleaned, not refused',
+    seam.fileStem('hero:cover?') === 'hero_cover_', seam.fileStem('hero:cover?'))
+  check('an empty or absent file_name means「use the default name」',
+    seam.fileStem(undefined) === null && seam.fileStem('   ') === null)
+  let stemIsPath = ''
+  try { seam.fileStem('public/hero') } catch (error) { stemIsPath = String(error.message) }
+  check('a file_name that carries a path is refused, not flattened into a name', stemIsPath.includes('不接受路径'), stemIsPath)
+  let stemEscapes = ''
+  try { seam.fileStem('../hero') } catch (error) { stemEscapes = String(error.message) }
+  check('a file_name that climbs out is refused', stemEscapes.includes('不接受路径'), stemEscapes)
+
+  // The naming has to reach the write, not just the decision.
+  const hostSource = readFileSync(new URL('./lib/index.js', import.meta.url), 'utf8')
+  check('the generated name is the stem plus the real media extension',
+    /\$\{stem\}\$\{suffix\}\$\{MEDIA_EXT\[mediaType\]\}/u.test(hostSource),
+    'file_name must not decide the extension — the media type does')
+  check('only a multi-image call gets name suffixes',
+    /rows\.length > 1 && i > 0 \? `-\$\{i \+ 1\}` : ''/u.test(hostSource),
+    'a single picture asked for by name is exactly that name')
+  check('the tool hands save_dir and file_name to generate()',
+    /saveDir: typeof args\.save_dir === 'string'[\s\S]{0,160}name: typeof args\.file_name === 'string'/u.test(hostSource),
+    'without the pass-through the two parameters reach the API and change nothing')
+  check('each image carries the session-relative path the caller writes into its artefact',
+    /filePathRelative = rel\.split\(sep\)\.join\('\/'\)/u.test(hostSource)
+    && /相对会话目录：/u.test(hostSource),
+    'the absolute path alone leaves the caller doing path arithmetic')
+}
 
 /* ---- where the bytes actually land ---- */
 

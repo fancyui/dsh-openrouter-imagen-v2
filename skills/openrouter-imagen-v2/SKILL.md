@@ -1,6 +1,6 @@
 ---
 name: openrouter-imagen-v2
-description: Turn a request into a professional image prompt, then generate or edit the picture. Covers both 生成 and 修改 — 生成/绘制/画一张/出图 and 改背景/换风格/换光线/改颜色/换姿势/去物加物/局部重绘/扩图/出变体; text-to-image, image-to-image, restyle, relight, inpainting, outpainting, variations. Use for any 画风 or 媒介 the user names — 摄影/写实/产品图/人像/风景, 插画/水彩/油画/国风水墨/线稿/矢量/扁平/卡通/赛璐璐/像素画/丝网印刷/建筑效果图/图标/海报/贴纸 — 或任何其他风格.
+description: Turn a request into a professional image prompt, then generate or edit the picture. Covers both 生成 and 修改 — 生成/绘制/画一张/出图 and 改背景/换风格/换光线/改颜色/换姿势/去物加物/局部重绘/扩图/出变体; text-to-image, image-to-image, restyle, relight, inpainting, outpainting, variations. Use for any 画风 or 媒介 the user names — 摄影/写实/产品图/人像/风景, 插画/水彩/油画/国风水墨/线稿/矢量/扁平/卡通/赛璐璐/像素画/丝网印刷/建筑效果图/图标/海报/贴纸 — 或任何其他风格. Also use it when your deliverable is a 网页/幻灯片/文档/README/封面 that lacks 配图/头图: generate it, then use the returned path.
 ---
 
 # 出图与改图
@@ -15,6 +15,33 @@ description: Turn a request into a professional image prompt, then generate or e
 **不要复述参考图里已经拍清楚的外观。** 生图模型自己会读参考图（它走 `input_references`，不是文本）；再从文字里描述一遍产品外形、颜色、logo、端子、结构，只会与图像本身打架、降低还原度。要锁住主体就写一句「保持参考图中的产品外观不变」。
 
 **不要用文字代替出图。** 用户要图就给图。给出提示词不等于交付。
+
+## 什么时候该主动出图
+
+**用户没有说「出图」，不等于你不能出图。** 当用户要的是一份**产物** —— 网页、落地页、幻灯片、文档、README、报告封面 —— 而这张图正是缺的那一块时，主动调用工具把图补上，然后把它用进产物里。用户不为「每一张配图」单独下达指令，你也不必为每张图单独请示。
+
+**什么时候不要调用：** 纯文字任务；产物里已经有合适的图；只是想让成品「看起来更丰满」而自作主张。
+
+**拿不准要不要出图时，先问一句** —— 每次调用都真实消耗用户自己的 OpenRouter 额度，沉默地花钱比问一句更糟。
+
+## 结果怎么用
+
+结果里有 `filePath`（绝对路径）与 `filePathRelative`（相对会话目录）。**要把图放进你写的文件里，就用相对路径。**
+
+```js
+// 生成了 public/hero.png → 直接写进页面，不要再自己算路径
+await tools.openrouter_generate_imagen_v2({
+  prompt: '...',
+  save_dir: 'public',      // 相对会话目录，越界会报错
+  file_name: 'hero',       // 只要主干名，扩展名按实际媒体类型自动决定
+  aspect_ratio: '16:9',    // hero 的几何是确定的，比例应当是参数而不是提示词
+})
+// → <img src="public/hero.png">
+```
+
+**只说「已生成」而不给路径，对使用者没有用。** 多张时 `file_name` 会自动展开成 `hero.png`、`hero-2.png`、`hero-3.png`，挑一张写进页面，其余留在目录里。
+
+`save_dir` 只能留在会话工作目录内 —— 想写到别处，请让用户在工作台的「保存目录」里改。
 
 ## 第一步：照用户说的媒介写
 
@@ -91,18 +118,18 @@ description: Turn a request into a professional image prompt, then generate or e
 
 用**具体的名词和参数**，不要写「高级 / 大气 / 好看」这类空词。
 
-## 画幅与尺寸：写进 prompt，不要传参数
+## 画幅与尺寸：能当参数就当参数
 
-对话里提到的**画幅比例或图片尺寸**（「竖的」「9:16」「2K」）**写进 prompt** —— 这是它们进入请求的唯一通道：
+`aspect_ratio` / `resolution` 是**请求字段，不是面板字段** —— 你填它们不会动用户的设置，也不会和他自己点的值打架。这一点与工作台不同：手动出图时画幅归面板管，你调不了；**你自己调用时可以直接填**。
 
-- 「要 9:16」→ `vertical 9:16 portrait format, tall framing`
-- 「用 2K」→ `high-detail 2K render`
+判断标准是**有没有确定的几何**：
 
-同时**不要**填 `aspect_ratio` / `resolution` 参数 —— 那两个字段归工作台的「参数」面板，你看不到面板的值，猜一个填进去只会和它打架。
+- **确定的几何** → 填参数。网页 hero 要 16:9、手机壁纸要 9:16、头像要 1:1、横幅封面要 21:9、文档插图要 4:3。prompt 里的「vertical 9:16 portrait format」是软约束，参数才是硬约束。
+- **只是构图倾向**（「高一点」「更空」「主体偏左」）→ 写进 prompt，不要动比例。
 
-用户没提画幅时，**按这句话的意图写构图，不要猜他的面板** —— prompt 不写比值。
+用户明确说了「要 9:16」「用 2K」时**照填**，这是被点名，不是自作主张。
 
-prompt 里照写了比值时，回复里提醒一句「面板宽高比可设为 9:16」，两条路都不断。
+手工出图的用户若抱怨面板比例不对，回复里可以提一句「面板宽高比可设为 9:16」——那是他的设置，你替他改不了。
 
 ## 其余参数值不要写进 prompt
 
@@ -115,7 +142,7 @@ prompt 里照写了比值时，回复里提醒一句「面板宽高比可设为 
 ## 参考图的三种给法
 
 1. **用户在对话里贴的图** —— 已经在附件里，直接用。
-2. **`reference_files`** —— 本机绝对路径，**必须位于会话工作目录内**（越界会被拒绝）；Host 会读出来内联。
+2. **`reference_files`** —— 本机路径，相对会话工作目录或绝对路径都行，**必须落在会话工作目录内**（越界会被拒绝）；Host 会读出来内联。
 3. **`reference_images`** —— http(s) URL 或 data URL，最多 4 张。
 
 带参考图时，提示词**只写要改的部分与新场景**（背景、光线、镜头、风格、构图），不要复述参考图里已有的外观。
@@ -129,3 +156,6 @@ prompt 里照写了比值时，回复里提醒一句「面板宽高比可设为 
 - **画风不对，太扁平** → 检查是不是把摄影的轴删过头了；补回该媒介真正需要的细节轴。
 - **要复现同一张** → 用 `seed` 字段固定种子，而不是把数字写进 prompt。
 - **一次出多张** → 用 `count` 字段；想比较不同构图就改提示词分次出。
+- **`save_dir must stay inside the session working directory`** → `save_dir` 写到了项目外面。改用相对会话目录的路径（如 `public`），或让用户在「保存目录」里改。
+- **图生成了但页面里显示不出来** → 检查你写进 `<img src>` 的是不是 `filePathRelative`；相对路径是相对**会话目录**的，页面在子目录里就要带上这段前缀。
+- **重新生成了同名图，页面还是旧图** → 写进页面的永远是**返回的** `filePathRelative`，不是你请求的 `file_name`：同名已存在时会自动让开成 `hero-2.png`，返回的路径才是真正写出的那个。

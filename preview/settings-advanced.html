@@ -119,7 +119,7 @@ textarea.dsh-iv-in[data-mono="1"]{font-family:ui-monospace,SFMono-Regular,Menlo,
 
 /* ---- conversation column ---- */
 .dsh-iv-convo{flex:1 1 auto;display:flex;flex-direction:column;min-height:0}
-.dsh-iv-scroll{flex:1 1 auto;overflow:auto;min-height:0;padding:12px 14px;display:flex;flex-direction:column;gap:11px}
+.dsh-iv-scroll{flex:1 1 auto;overflow:auto;min-height:0;padding:12px 14px;display:flex;flex-direction:column;gap:11px;overscroll-behavior:contain;scrollbar-width:thin;scrollbar-color:var(--dsw-alias-border-l2) transparent}
 .dsh-iv-msg{display:flex;flex-direction:column;gap:5px;max-width:100%}
 .dsh-iv-role{font-size:11px;font-weight:650;color:var(--dsw-alias-label-secondary)}
 .dsh-iv-body{border:1px solid var(--dsw-alias-border-l1);border-radius:11px;padding:8px 11px;background:var(--dsw-alias-bg-base);white-space:pre-wrap;word-break:break-word;font-size:12.5px}
@@ -127,7 +127,31 @@ textarea.dsh-iv-in[data-mono="1"]{font-family:ui-monospace,SFMono-Regular,Menlo,
 .dsh-iv-note{font-size:11.5px;color:var(--dsw-alias-label-secondary)}
 .dsh-iv-prompt{border:1px solid #cfe0ff;background:#f7faff;border-radius:11px;overflow:hidden}
 .dsh-iv-prompthead{display:flex;align-items:center;gap:7px;padding:6px 11px;font-size:11.5px;font-weight:650;color:#1d4ed8;background:#eef4ff;border-bottom:1px solid #cfe0ff}
-.dsh-iv-promptbody{padding:8px 11px;font-size:12px;white-space:pre-wrap;word-break:break-word;font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;line-height:1.55;max-height:260px;overflow:auto}
+/* The prompt is the one bubble that can be arbitrarily long, so it gets a real
+   scrollbox of its own instead of growing until the column runs out. Three
+   matter and all three were measured in a real browser, not assumed:
+
+   1. The cap was 260px, which clipped a typical prompt hard: a 2247px prompt
+      showed 276px of itself, about an eighth. It is now a larger share of the
+      window up to a ceiling (430px visible in a 900px window), and it shrinks
+      back down on a short window rather than outgrowing the column.
+   2. The bar is now styled by the plugin instead of inherited. The platform
+      default already had a 15px gutter on this machine, but inherited means
+      the OS decides: with overlay / auto-hide scrollbars on, a box with no
+      scrollbar of its own shows nothing at all. Naming the width and thumb
+      makes the bar identical everywhere, independent of that toggle.
+   3. Containment. overscroll-behavior stops the wheel from chaining out to the
+      conversation behind it, which used to make a long prompt look like it was
+      refusing to scroll on its own. */
+.dsh-iv-promptbody{padding:8px 11px;font-size:12px;white-space:pre-wrap;word-break:break-word;font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;line-height:1.55;max-height:min(46vh,420px);overflow:auto;overscroll-behavior:contain;scrollbar-width:thin;scrollbar-color:#6f9ae0 transparent}
+.dsh-iv-promptbody::-webkit-scrollbar{width:10px;height:10px}
+.dsh-iv-promptbody::-webkit-scrollbar-track{background:transparent}
+.dsh-iv-promptbody::-webkit-scrollbar-thumb{background:#6f9ae0;border-radius:999px;border:3px solid transparent;background-clip:content-box}
+.dsh-iv-promptbody:hover::-webkit-scrollbar-thumb{background:#4f7fd4;background-clip:content-box}
+.dsh-iv-scroll::-webkit-scrollbar{width:10px}
+.dsh-iv-scroll::-webkit-scrollbar-track{background:transparent}
+.dsh-iv-scroll::-webkit-scrollbar-thumb{background:var(--dsw-alias-border-l2);border-radius:999px;border:3px solid transparent;background-clip:content-box}
+.dsh-iv-scroll:hover::-webkit-scrollbar-thumb{background:var(--dsw-alias-border-l1);background-clip:content-box}
 .dsh-iv-promptfoot{display:flex;align-items:center;gap:7px;flex-wrap:wrap;padding:6px 11px;border-top:1px solid #cfe0ff;background:#f7faff}
 .dsh-iv-paramsline{display:flex;align-items:center;gap:6px;flex-wrap:wrap;font-size:11.5px;color:var(--dsw-alias-label-secondary);min-width:0}
 .dsh-iv-tool{display:flex;align-items:center;gap:8px;padding:7px 11px;border:1px dashed var(--dsw-alias-border-l2);border-radius:10px;background:var(--dsw-alias-bg-base);font-size:12px;color:var(--dsw-alias-label-secondary)}

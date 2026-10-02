@@ -3,3 +3,6 @@ preview/*.png
 
 # Local diagnostics
 *.log
+
+# commit message scratch
+.git-commit-msg.txt

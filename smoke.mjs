@@ -391,6 +391,18 @@ check('buildBody reports the parameters that were really sent',
 const withOverrides = autoProvided.openrouterImagenV2.buildBody({ prompt: 'hi', aspect_ratio: '21:9', count: 3, quality: 'high' })
 check('a per-call override reaches the request body', withOverrides.body.aspect_ratio === '21:9' && withOverrides.body.n === 3 && withOverrides.body.quality === 'high')
 
+// `model` is the override the workspace forgot to send, which made the image
+// model look like it could only come from settings. Pin the precedence: an
+// explicit per-call model beats the stored default, and the stored default is
+// still used when the call does not name one.
+const modelOverride = autoProvided.openrouterImagenV2.buildBody({ prompt: 'hi', model: 'other/image-model' })
+check('a per-call model beats the stored default',
+  modelOverride.body.model === 'other/image-model' && modelOverride.params.model === 'other/image-model',
+  JSON.stringify(modelOverride.body.model))
+const modelDefaulted = autoProvided.openrouterImagenV2.buildBody({ prompt: 'hi', model: '' })
+check('an empty per-call model falls back to the stored default, not to empty',
+  modelDefaulted.body.model === 'test/image-model', JSON.stringify(modelDefaulted.body.model))
+
 const badAspect = autoProvided.openrouterImagenV2.buildBody({ prompt: 'hi', aspect_ratio: '99:1' })
 check('an unsupported ratio is clamped, not sent through', badAspect.body.aspect_ratio === undefined)
 

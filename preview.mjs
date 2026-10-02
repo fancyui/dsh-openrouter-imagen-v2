@@ -347,6 +347,60 @@ check('a non-JSON answer is explained as an unmounted plugin, not a bare status'
 check('the unmounted-plugin message covers both 404 and 405',
   /status === 404 \|\| status === 405/u.test(clientSource))
 
+// The image model used to be reachable only from settings, because the
+// workspace never sent one with the request. The picker lives under the
+// composer and every configured model is offered. It is a PER-CALL control, so
+// it must NOT write to the stored config.
+check('a model picker sits under the composer',
+  domOf(workspaceHtml).includes('dsh-iv-callmodel') && domOf(workspaceHtml).includes('dsh-iv-callmodelsel'))
+check('the picker offers every configured image model',
+  CONFIG.models.every((id) => domOf(workspaceHtml).includes(`>${id}<`)))
+check('the generate call carries the chosen model',
+  clientSource.includes('model: pickModel()'), 'the request must name a model or the Host uses the stored default')
+check('the picker is per-call and never writes to settings',
+  !/setCallModel[\s\S]{0,120}patch\(/u.test(clientSource), 'picking a model for one call must not rewrite the default')
+check('the picker can return to the stored default',
+  clientSource.includes("setCallModel('')"))
+// With a per-call pick in play the header must NOT keep advertising the stored
+// default: a label that disagrees with the request is worse than no label.
+check('the header reports the model this call will really use',
+  clientSource.includes('pickModel() ||') && clientSource.includes('模型 · 本次 '),
+  'the header chip must follow the per-call pick, not only the stored default')
+
+// Render the override state for real, rather than only grepping for the branch.
+// The pick is component state with no seeding prop, so mount a copy of the
+// module whose initial value is already an override; everything else is the
+// shipping code path.
+{
+  const seededSource = clientSource.replace(
+    "const [callModel, setCallModel] = React.useState('')",
+    "const [callModel, setCallModel] = React.useState('google/gemini-2.5-flash-image')",
+  )
+  check('the per-call model state is reachable for seeding (override render is real)',
+    seededSource !== clientSource)
+  if (seededSource !== clientSource) {
+    let seededCaptured = null
+    const seededSandbox = { ...sandbox, window: { __ModuleLoader__: { load: (d) => { seededCaptured = d } } } }
+    vm.createContext(seededSandbox)
+    vm.runInContext(seededSource, seededSandbox, { filename: 'client.seeded.js' })
+    const seededExports = seededCaptured.factory((id) => {
+      if (id === 'react') return React
+      throw new Error(`unexpected require(${id})`)
+    })
+    const seededTree = await mountStable(seededExports.Workspace)
+    const seededHtml = domOf(renderToHtml(seededTree))
+    const other = 'google/gemini-2.5-flash-image'
+    check('with an override the header names it and says it is this call only',
+      seededHtml.includes('模型 · 本次') && seededHtml.includes(other))
+    check('with an override the picker shows the highlight state',
+      /dsh-iv-callmodelsel[^>]*data-override="1"/u.test(seededHtml))
+    check('with an override a way back to the default is offered',
+      seededHtml.includes('回到默认'))
+    check('the header no longer claims the override is the stored default',
+      !/title="来自设置的默认模型"/u.test(seededHtml))
+  }
+}
+
 mkdirSync(OUT, { recursive: true })
 
 const TOKENS = `:root{

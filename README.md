@@ -28,6 +28,9 @@ v2 换了个思路：**一个独立的工作台**，从左侧边栏进入，占�
 - **「写提示词后先确认再出图」默认关**。关着就是点一次「生成」直接出图（提示词仍显示在对话里）；
   打开会在提示词卡片上停一下，等你点「就这样出图」。
 - **提示词双模式**：`直接出图`（输入框文字即最终提示词，零额外延迟）与 `让 AI 写提示词`（默认）。
+- **模型选择器在输入框下方**（「生成」按钮上面单独一行），**只作用于这一次出图**，不改设置里的默认值。
+  选过之后输入框上方会出现「回到默认」；此时顶栏那个模型标签会写成 `模型 · 本次 …`，并把默认值放进 tooltip，
+  所以顶栏和选择器不会互相矛盾。候选来自设置弹窗 → 模型 里的清单（最多 16 个）。
 
 ## 设置弹窗
 
@@ -108,7 +111,7 @@ dsh plugin --profile desktop add X:\github\dsh-openrouter-imagen-v2
 | --- | --- | --- |
 | `apiKey` | **设置弹窗 → 密钥** | OpenRouter 密钥，`role('secret')`，服务端从不回传（只给头尾预览） |
 | `model` | 设置弹窗 → 模型 / 工作台「参数」 | 默认图像模型 id |
-| `models` | 设置弹窗 → 模型 | 图像模型清单，最多 16 个；工作台的下拉读的就是它 |
+| `models` | 设置弹窗 → 模型 | 图像模型清单，最多 16 个；工作台的两个下拉读的都是它 |
 | `promptModel` | **设置弹窗 → 高级** | 「让 AI 写提示词」用的**文本**模型（默认 `google/gemini-2.5-flash`）；指向图像模型会失败 |
 | `resolution` / `aspectRatio` / `quality` / `outputFormat` / `count` / `background` / `seed` | 工作台「参数」 | 逐次调整的生成参数 |
 | `confirmPrompt` | 工作台「参数」 | 写提示词后是否先确认，**默认 false** |
@@ -117,6 +120,10 @@ dsh plugin --profile desktop add X:\github\dsh-openrouter-imagen-v2
 | `saveDir` | 设置弹窗 → 高级 | 生成文件的存放目录，默认 `generated-images` |
 | `providerSort` / `extraJson` | 设置弹窗 → 高级 | Provider 排序 / 附加请求体字段 |
 | `skills` | settings.yaml | 是否安装随包 skill，默认开 |
+
+**模型的优先级**：输入框下方选择器里选的那个（只这次）→ `model` 设置 → `models` 清单第一条。
+Host 端和界面用的是同一套顺序，所以顶栏显示的和真正发出去的永远是同一个。
+这个顺序就是 `buildBody` 里的 `pick(source.model, settings.model) || palette[0]`。
 
 ## 生成记录
 
@@ -222,6 +229,25 @@ Cordis 对**属性形式**的服务访问（`ctx.tools`）有门禁：没在 `in
 
 **其余服务一律用 `ctx.get(...)` 读**：`webServer` / `connection` / `settings` / `attachments`
 缺失时只是少一个功能，而不是整个插件挂掉。`tools` 不一样 —— 它就是插件本身，等它是对的。
+
+### 踩过的坑：模型看起来「只能用设置里那个」
+
+同一个教训的第二次：客户端出图时**只发了提示词**。
+
+```js
+// lib/client.js —— 缺了 model：
+body: JSON.stringify({ prompt: promptText, request: draft, model: pickModel() })
+```
+
+Host 那边 `buildBody` 的优先级是 `pick(source.model, settings.model) || palette[0]`，
+`source.model` 是空的就永远落到设置里那个默认值。所以「别处选模型」不是没生效，而是**根本没有别处** ——
+`models` 清单当时只是下拉框的候选，不参与决定本次用哪个。
+
+关键在于**测试也没抓到**：`smoke.mjs` 有一条「per-call override 到达请求体」，
+断言的是 `aspect_ratio` / `count` / `quality` —— 唯独漏了 `model`。现在这条补上了，
+`preview.mjs` 也断言请求里必须带 `model: pickModel()`（把这一项删掉，测试立刻红）。
+
+教训：一条覆盖了「大部分字段」的测试，看起来很像覆盖了全部。
 
 ### 密钥保存时报错
 

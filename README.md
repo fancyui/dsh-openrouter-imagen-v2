@@ -1,5 +1,10 @@
 # dsh-openrouter-imagen-v2
 
+> **兼容版本：DeepSeek Harness 0.2.x** —— 在 **0.2.0-rc.2** 上开发与实测。
+> 声明写在 `package.json` 的 `engines.dsh`（`^0.2.0-rc.2`）与 `peerDependencies` 的 `@deepseek-ai/dsh`。
+> 两者作用不同：**`engines.dsh` 只作声明**（给人和市场列表看），**`peerDependencies` 才是 DSH 真正判定的那一个** ——
+> 版本对不上时插件会在启动时被拒，而不是带着不明原因的错误跑起来。
+
 给 DeepSeek Harness 接上 OpenRouter 的生图能力，做成一个**独立的工作台**。
 
 > **独立仓库，与 v1 并列。** 它有**自己的**插件 id、设置命名空间、路由前缀和工具名，

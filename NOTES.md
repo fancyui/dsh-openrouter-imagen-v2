@@ -343,6 +343,47 @@ input.dsh-iv-in,select.dsh-iv-in,textarea.dsh-iv-in{width:100%;…}
 
 ## 内部参考
 
+### 兼容版本声明在哪里
+
+一共**四个地方**，作用各不相同。查证来源是宿主里那几份包的 README：
+`@deepseek-ai/dsh-package-manifest`、`@deepseek-ai/dsh-app-boot`、`@deepseek-ai/dsh-plugin-manager`。
+
+| 位置 | 字段 | 谁用 | 会不会拦 |
+| --- | --- | --- | --- |
+| `package.json` → `engines.dsh` | SemVer range | 人、市场列表 | **不会** |
+| `package.json` → `dsh.manifestVersion` | 固定 `1` | 读 `dsh` 块的读者 | **不会** |
+| `package.json` → `peerDependencies` 的 `@deepseek-ai/dsh` | SemVer range | **DSH 启动与安装时** | **会** |
+| profile 的 `compatibility.json` | `包名@版本` → DSH 版本列表 | 用户豁免 | 只放宽，不收紧 |
+
+三段原文，值得记住：
+
+> `engines.dsh` — Author-declared compatible DSH versions as a SemVer range, including exact prerelease
+> versions. This field sits beside `engines.node` and `engines.npm`; an engines object may omit `dsh`.
+> —— `dsh-package-manifest`
+
+> Before a profile imports a plugin, DSH checks its `peerDependencies` on `@deepseek-ai/dsh` and
+> `@deepseek-ai/dsh-*` against the single runtime version returned by `getDshRuntimeVersion()`. Every
+> declared range must match; prereleases participate in range matching. **Missing DSH peers impose no
+> constraint; invalid ranges are incompatible. These checks use peer declarations, not `engines.dsh`.**
+> —— `dsh-app-boot`
+
+> **Compatibility is declarative.** Current installers and loaders do not enforce `dsh.manifestVersion`
+> or `engines.dsh`; declaring a range does not reject incompatible hosts or validate SemVer syntax.
+> —— `dsh-package-manifest`（Known Limitations）
+
+所以本包现在的写法是：`engines.dsh: ^0.2.0-rc.2`（声明）+ `peerDependencies` 里
+`@deepseek-ai/dsh: ^0.2.0-rc.2`（**真正会被拦的那个**），并标记 `optional: true` 以免 pnpm 去解析它。
+
+注意 `peerDependencies` 是**按名字前缀匹配**的：`@deepseek-ai/dsh` 和 `@deepseek-ai/dsh-*` 都会被检查。
+也就是说现有的 `dsh-skill` / `dsh-tools` 两条 peer **早就在被检查了**，它们能通过，
+是因为范围 `>=0.2.0-rc.1 <0.3.0` 覆盖了运行时的 `0.2.0-rc.2`。
+
+**被拒时的样子**：不是崩溃，是「这一行没加载」—— 插件行直接 `disabled: true`，
+所有路由落到 SPA 兜底，于是看起来像 404/405。诊断见上面的「接口返回 404 / 405」。
+
+豁免走 CLI：`dsh plugin --profile <profile> allow-version <package@version> --dsh-version <runtime> --accept-risk`，
+写进 profile 的 `compatibility.json`。**升级不继承豁免**，插件升了或 DSH 升了都要重新批。
+
 ### 同源 API（工作台自己用，不是对外接口）
 
 | 方法 | 路径 | 说明 |

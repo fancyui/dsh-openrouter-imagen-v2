@@ -1,5 +1,12 @@
 # dsh-openrouter-imagen-v2
 
+> **Compatibility: DeepSeek Harness 0.2.x** — developed and tested on **0.2.0-rc.2**.
+> Declared in `package.json` as `engines.dsh` (`^0.2.0-rc.2`) and as the `@deepseek-ai/dsh`
+> `peerDependencies` entry. The two do different jobs: **`engines.dsh` is declarative only** (for
+> readers and for a marketplace listing), while **`peerDependencies` is what DSH actually enforces** —
+> a host that does not satisfy the range refuses the plugin at startup instead of letting it run with
+> unexplained failures.
+
 Image generation for DeepSeek Harness through the OpenRouter Image API, delivered as a **standalone
 workspace**.
 

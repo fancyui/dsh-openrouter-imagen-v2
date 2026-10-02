@@ -1,7 +1,8 @@
 # dsh-openrouter-imagen-v2
 
-> **v2 与 v1 并存。** 这个包在仓库的 `v2/` 目录下，包名 `dsh-openrouter-imagen-v2`，
-> 用的是自己的插件 id、设置命名空间、路由前缀和工具名。**装 v2 不会影响 v1**，两个可以同时装。
+> **独立的仓库，与 v1 并列。** 这是一个单独的包（`X:\github\dsh-openrouter-imagen-v2`），
+> 和 v1（`X:\github\dsh-openrouter-imagen`）是**同级目录**，各自有自己的 git 仓库。
+> 它用**自己的**插件 id、设置命名空间、路由前缀和工具名，所以 **两个可以同时装，互不影响**。
 
 v1 把生图能力挂在 DSH 的对话界面上（设置页 + 输入框上方的参数条 + 对话里的图片卡片）。
 v2 换了个思路：**一个独立的工作台**，从左侧边栏进入，占据中央主视图，**不套用对话界面**。
@@ -10,6 +11,7 @@ v2 换了个思路：**一个独立的工作台**，从左侧边栏进入，占�
   以及一份**生成记录**（v1 没有这东西 —— 图片只以附件和文件形式存在，所以「最近 5 张」和「用同样参数再出」都无从读起）。
 - **Client 半边**：两个注册 —— `sidebar.panellist`（侧栏全局面板图标，就在「插件」组下面）和
   `main`（键控中央主视图，key = `imagen`）。点侧栏入口，中央区域整块变成工作台。
+- **设置弹窗**：工作台够不到 DSH 自带的设置页，所以密钥、模型、提示词模型都在自己的弹窗里配。
 - **自带 skill**：`skills/openrouter-imagen-v2/SKILL.md` 随包安装，教模型「推导画风，不要查表」。
 
 ## 界面
@@ -90,10 +92,11 @@ dsh plugin --profile desktop add X:\github\dsh-openrouter-imagen-v2
          name: 'dsh-openrouter-imagen-v2'
    ```
 
-3. 在 `v2/` 里跑一次 `npm install` —— `@deepseek-ai/*` 由宿主拦截解析，但 `undici` 走普通解析，
+3. 在本包目录里跑一次 `npm install` —— `@deepseek-ai/*` 由宿主拦截解析，但 `undici` 走普通解析，
    必须能在包内找到（这是 v1 踩过的坑：app 升级后 junction 链断掉，插件整个挂不上）。
 
-4. **重启 DSH**。插件的挂载只在启动期发生。
+4. **重启 DSH**。插件的挂载只在启动期发生 —— 不重启，`/openrouter-imagen-v2/api/*` 会返回
+   `GET` 404 / 非 GET 405（那是前端静态兜底在应答，见下面的「排错」）。
 
 **不要同时用两条通道**：同一个 `(kind, path)` 的路由会被注册两次，整个插件树在启动时失败。
 
@@ -168,32 +171,57 @@ v1 的图片只存在于两处：durable attachment 与 `saveDir` 里的文件�
 不是请求写错了，而是 DSH 的前端静态兜底在应答：它接住所有没被路由匹配的请求，未知路径回 404、
 非 GET 回 405。**你自己的接口不该由兜底来回答**，所以这两个状态码等价于「这一行没加载」。
 
-原因几乎总是同一个：**插件行只在 DSH 启动时加载**。装完不重启，路由就不存在。
+先看 `plugin_manager` 的 `list_plugins`，取 `include:openrouter-imagen-v2` 那一行：
 
-还有一种更隐蔽的情况：如果那一行在**包还没写完的时候**被读到过，它的 fiber 会停在 `failed`，
-而且**这个进程活多久就失败多久** —— 之后把文件改对了也没用，因为模块不会被再次导入，
-热重载也不会重试。判断依据是「模块加载期的日志一行都没出现」，那就说明 `apply()` 压根没跑。
+| `fiberPhase` | 含义 | 怎么办 |
+| --- | --- | --- |
+| `active` | 加载成功 | —— |
+| `failed` | **加载时抛错了**，路由没注册 | 看下面的启动诊断 |
+| `null` | 未启用 | 检查 patch 行 |
 
-判断当前状态：
+`failed` 时真正的错误只在**启动诊断**里，界面上看不到。它会打印到启动它的那个进程的 stderr：
 
 ```powershell
-# 404 = 没挂载（或 fiber failed）；401 = 挂载了，闸门在工作
-Invoke-WebRequest http://127.0.0.1:19387/openrouter-imagen-v2/api/config -UseBasicParsing
+# 手动跑一次启动，就能拿到 Failed plugins 那一段
+$exe = "C:\Users\WR\AppData\Local\Programs\DeepSeek Harness\DeepSeek Harness.exe"
+$hostJs = "C:\Users\WR\AppData\Local\Programs\DeepSeek Harness\resources\app.asar\dsh\node_modules\@deepseek-ai\dsh-desktop-host\lib\index.js"
+$env:ELECTRON_RUN_AS_NODE = "1"
+& $exe --expose-internals $hostJs `
+  "C:\Users\WR\AppData\Local\Programs\DeepSeek Harness\resources\app.asar\dsh" `
+  "C:\Users\WR\.dsh\profiles\desktop" `
+  "C:\Users\WR\AppData\Local\Programs\DeepSeek Harness\resources\runtime\primary-runtime" `
+  "C:\Users\WR\AppData\Local\Programs\DeepSeek Harness\resources\runtime\pnpm\bin\pnpm.mjs" `
+  "C:\Users\WR\AppData\Local\Programs\DeepSeek Harness\resources\runtime\bin" 2>&1 |
+  Select-String "Failed plugins" -Context 0,20
 ```
 
-工作台现在会直接说「接口没有挂载…请重启 DSH」，而不是报一个用户无法处置的状态码。
+**另外要记住：插件行只在 DSH 启动时加载。** 装完不重启，路由就不存在。
 
-### 怎么确认一行到底加载了没有
+### 踩过的坑：`ctx.tools` 必须配 `inject`
 
-`plugin_manager` 的 `list_plugins` 给出每一行的 `fiberPhase`：
+这个插件第一版就是这么挂的，值得写下来 —— 因为失败**完全静默**：
 
-| `fiberPhase` | 含义 |
-| --- | --- |
-| `active` | 加载成功，路由已注册 |
-| `failed` | 加载过并抛错了 —— 在当前进程里不会自行恢复 |
-| `null` | 未启用 |
+```js
+// lib/index.js 顶部，缺了这一行：
+export const inject = ['tools']
+```
 
-v1 与 v2 都应当是 `active`。只有 v2 是 `failed` 时，问题在 v2 这一行，与 v1 无关。
+Cordis 对**属性形式**的服务访问（`ctx.tools`）有门禁：没在 `inject` 里声明，读取就抛
+`cannot get property "tools" without inject`。抛在 `apply()` 里 → fiber 变 `failed` →
+**路由根本没注册** → 所有请求落到 SPA 兜底 → `GET` 404 / 其它 405。
+
+三个坑叠在一起才让它难查：
+
+1. 抛错发生在 `apply` 内部，界面上只看到 404/405，看不出是插件没加载；
+2. **`ctx.get('tools')` 不会抛**（返回 `undefined`），所以只有属性写法才会中招 —— 两种写法混用时很容易漏；
+3. 用「桩 Context」写的测试**抓不到它**：桩大方地把 `tools` 递出来，门禁根本不存在。
+
+所以现在 `smoke.mjs` 的桩**复现了这道门禁**（读未声明的服务属性会抛），
+`preflight-load.mjs` 也断言 `inject` 恰好是 `['tools']` —— 而它之前断言的**恰恰相反**
+（要求 `inject` 为空），正是那条断言把这个 bug 锁了进去。
+
+**其余服务一律用 `ctx.get(...)` 读**：`webServer` / `connection` / `settings` / `attachments`
+缺失时只是少一个功能，而不是整个插件挂掉。`tools` 不一样 —— 它就是插件本身，等它是对的。
 
 ### 密钥保存时报错
 

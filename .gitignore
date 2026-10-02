@@ -1,6 +1,9 @@
 node_modules/
 preview/*.png
 
+# Generated images (plugin output, not source)
+generated-images/
+
 # Local diagnostics
 *.log
 

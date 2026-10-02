@@ -133,6 +133,15 @@ dsh plugin --profile desktop add X:\github\dsh-openrouter-imagen-v2
 Host 端和界面用的是同一套顺序，所以顶栏显示的和真正发出去的永远是同一个。
 这个顺序就是 `buildBody` 里的 `pick(source.model, settings.model) || palette[0]`。
 
+**`saveDir` 相对谁**：相对**当前会话的工作目录**，和 `read` / `write` / `edit` 这些工具是同一个根。
+填绝对路径就照用；留空则只存进 DSH 附件库，不落盘。
+
+这件事有个坑值得知道：工作台的「生成」按钮走的是插件自己的 HTTP 路由，
+而**一条 HTTP 请求不带会话身份** —— 只有工具调用才拿得到 `exec.agent.session.header.cwd`。
+所以界面会把当前会话的工作目录一并发给 Host（读 `ctx.get('sessions')` 的会话列表），
+Host 只接受**绝对路径**，其余一律退回附件库。这样 `saveDir` 才真的指向你的项目。
+（v1 的工作台不走这条路 —— 它是让 agent 去调工具，所以没这个问题。）
+
 ## 生成记录
 
 **这是 v2 相对 v1 新增的东西**，也是「历史」和「用同样参数再出」的前提。
@@ -256,6 +265,41 @@ Host 那边 `buildBody` 的优先级是 `pick(source.model, settings.model) || p
 `preview.mjs` 也断言请求里必须带 `model: pickModel()`（把这一项删掉，测试立刻红）。
 
 教训：一条覆盖了「大部分字段」的测试，看起来很像覆盖了全部。
+
+### 踩过的坑：`saveDir` 设了，图片却进了附件库
+
+同一个教训的第三次，而且这次是**逻辑对、接线错**：
+
+```js
+// lib/index.js —— 路由调用时没有 cwd：
+const result = await generate(input, { withDataUrl: true })
+```
+
+`generate` 内部是 `projectDirectory(options?.cwd)`，cwd 是 `undefined` 就返回 `null`，
+于是落到 `attachments.saveFile(...)` —— 图确实存下来了，只是存在
+`C:\Users\…\.dsh\attachments\v1\files\…`，而不是你设的目录。
+
+根因是**两条调用路径不对称**：
+
+| 调用方 | 有 cwd 吗 |
+| --- | --- |
+| 工具 `openrouter_generate_imagen_v2` | ✅ `exec.agent.session.header.cwd` |
+| 工作台的 `/generate` 路由 | ❌ 一条 HTTP 请求不带会话身份 |
+
+测试为什么没抓到：`smoke.mjs` 里**只有工具那条路**被测过，而且带着 `cwd: dir`：
+
+```js
+const callTool = async (args) => tool.execute(args, { agent: { session: { header: { cwd: dir } } } })
+```
+
+路由那条路**从来没有被跑过一次**。一条测了 A 路径的测试，不能说明 B 路径也对。
+
+现在：客户端把会话工作目录一并发出（`ctx.get('sessions')` 的会话列表里带 `cwd`），
+Host 只接受绝对路径（相对路径会被解析到 DSH 进程自己的目录，不是用户的工程）。
+断言也补在了**接线**上，而不只是补在纯函数上 —— 这点重要：
+`sessionCwdFrom` 这个辅助函数单独测是全绿的，删掉路由里那一行调用也照样全绿，
+直到补上「路由确实调用了它」和「请求体确实带了 cwd」两条断言才真的会红。
+**辅助函数正确，和它有没有被用上，是两件事。**
 
 ### 密钥保存时报错
 

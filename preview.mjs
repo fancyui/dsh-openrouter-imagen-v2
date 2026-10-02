@@ -367,6 +367,24 @@ check('the header reports the model this call will really use',
   clientSource.includes('pickModel() ||') && clientSource.includes('模型 · 本次 '),
   'the header chip must follow the per-call pick, not only the stored default')
 
+// The save-path bug: `/generate` reached the Host with no session directory, so
+// a relative `saveDir` could not be resolved and the bytes went to DSH's own
+// attachment store. The client is the only side that knows the directory, so it
+// has to send it.
+check('the generate request carries the session directory',
+  /api\('generate'[\s\S]{0,600}cwd: sessionCwd\(\)/u.test(clientSource),
+  'without cwd the Host cannot resolve saveDir and falls back to attachments')
+check('the session directory is read through ctx.get, not ctx.sessions',
+  clientSource.includes("ctx?.get?.('sessions')")
+  // Strip line comments first: the code EXPLAINS this rule in a comment, and a
+  // naive search would match the explanation instead of the code.
+  && !/ctx\.sessions\b/u.test(clientSource.replace(/^\s*\/\/.*$/gmu, '')),
+  'the property form throws without inject — the way this plugin once died')
+check('a failure to read the session list degrades to empty, not a crash',
+  /const sessionCwd = React\.useCallback\(\(\) => \{\s*try \{[\s\S]{0,900}\} catch \{\s*return ''\s*\}/u.test(clientSource))
+check('the main view receives the client context (it is what exposes sessions)',
+  /slots\.register\(\{ name: 'main', key: PANEL_KEY \}, \(\) => h\(Workspace, \{ ctx \}\)\)/u.test(clientSource))
+
 // Render the override state for real, rather than only grepping for the branch.
 // The pick is component state with no seeding prop, so mount a copy of the
 // module whose initial value is already an override; everything else is the

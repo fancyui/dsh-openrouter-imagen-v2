@@ -15,6 +15,7 @@
  *   node smoke.mjs
  */
 import { mkdtemp, rm, writeFile } from 'node:fs/promises'
+import { readFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { GenerationStore, recordId } from './lib/store.js'
@@ -139,6 +140,8 @@ const provided = {}
 let gateCalls = 0
 const routes = []
 const tools = []
+/** Names the plugin handed to `attachments.saveFile` — the no-cwd fallback. */
+const attachmentWrites = []
 
 /**
  * A Context that enforces Cordis's real `inject` gate.
@@ -159,6 +162,16 @@ const makeCtx = (declared) => {
     webServer: { register: (route) => { routes.push(route); return () => {} } },
     connection: { requestRejection: () => { gateCalls += 1; return undefined } },
     settings: { update: async (ns, patch) => { settingsWrites.push({ ns, patch }) } },
+    // Records where the plugin would fall back to when it has no session
+    // directory. The save-path bug was exactly this fallback firing when it
+    // should not have, so the stub has to be able to observe it.
+    attachments: {
+      saveImages: async (rows) => rows.map((row, i) => ({
+        attachmentId: `att-stub-${i}`, mediaType: row.mediaType, bytes: row.data.length, width: 8, height: 8, name: row.name,
+      })),
+      saveFile: async (row) => { attachmentWrites.push(row.name); return { id: `file-${row.name}` } },
+      fileHostPath: (ref) => join(tmpdir(), 'oiv2-attachments', String(ref.id ?? 'x')),
+    },
   }
   const guard = (key) => {
     if (!declared.includes(key)) {
@@ -355,6 +368,48 @@ check('the tool rejects an empty prompt', rejectedEmpty.includes('prompt 必填'
 let rejectedEscape = ''
 try { await callTool({ prompt: 'x', reference_files: ['C:/Windows/System32/drivers/etc/hosts'] }) } catch (error) { rejectedEscape = String(error.message) }
 check('a reference file outside the session workspace is refused', rejectedEscape.includes('工作目录内'), rejectedEscape)
+
+/* ---- where the bytes actually land ---- */
+
+/**
+ * The bug this pins: `/generate` was called WITHOUT a cwd, so a configured
+ * `saveDir` could not be resolved and every workspace generation fell through
+ * to DSH's own attachment store. The picture saved — just not where the setting
+ * said. Nothing caught it because only the TOOL path was ever tested with a
+ * cwd; the route was never exercised at all.
+ *
+ * The decision is a pure function, so it is tested directly. Driving it through
+ * a real HTTP round trip would mean stubbing `undici` (the plugin imports it
+ * rather than using global fetch), which would test the stub more than the code.
+ */
+{
+  const seam = provided.openrouterImagenV2
+  const absolute = join(tmpdir(), 'some-project')
+
+  check('a cwd the client reports is honoured when it is absolute',
+    seam.sessionCwdFrom({ cwd: absolute }) === absolute, JSON.stringify(seam.sessionCwdFrom({ cwd: absolute })))
+  check('a cwd is trimmed rather than taken verbatim',
+    seam.sessionCwdFrom({ cwd: `  ${absolute}  ` }) === absolute)
+  check('an absent cwd degrades to no-cwd behaviour',
+    seam.sessionCwdFrom({}) === undefined && seam.sessionCwdFrom({ cwd: '' }) === undefined
+    && seam.sessionCwdFrom({ cwd: '   ' }) === undefined)
+  check('a RELATIVE cwd is refused, not resolved against the process cwd',
+    seam.sessionCwdFrom({ cwd: 'generated-images' }) === undefined
+    && seam.sessionCwdFrom({ cwd: './pictures' }) === undefined,
+    'a relative cwd would write outside the user\'s project')
+  check('a non-string cwd is refused',
+    seam.sessionCwdFrom({ cwd: 42 }) === undefined && seam.sessionCwdFrom({ cwd: null }) === undefined)
+
+  // The helper being right means nothing if the route does not CALL it — which
+  // is precisely how this bug existed: the logic was fine, the wiring was not.
+  const hostSource = readFileSync(new URL('./lib/index.js', import.meta.url), 'utf8')
+  check('the /generate route resolves the cwd it is handed',
+    /action === 'generate'[\s\S]{0,600}sessionCwdFrom\(input\)/u.test(hostSource),
+    'sessionCwdFrom must be called on the route path, not merely exported')
+  check('the /generate route passes that cwd into generate()',
+    /action === 'generate'[\s\S]{0,900}generate\(input, \{ withDataUrl: true, cwd \}\)/u.test(hostSource),
+    'without cwd here, saveDir cannot resolve and bytes go to the attachment store')
+}
 
 /* ---- the request body builder ---- */
 

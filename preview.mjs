@@ -428,10 +428,28 @@ const dialogNoKeyHtml = await mountDialog({ keyInfo: { hasKey: false, prefix: ''
 const dialogModelsHtml = await mountDialog({ initialTab: 'models' })
 const dialogAdvancedHtml = await mountDialog({ initialTab: 'advanced' })
 
-check('the model tab renders the palette and the default picker',
-  dialogModelsHtml.includes('图像模型（画图的那个）')
+// One list, two jobs. The default is marked ON the row, so there is no second
+// dropdown above the palette saying the same thing a different way.
+check('the model tab renders the palette and its size',
+  dialogModelsHtml.includes('图像模型')
   && CONFIG.models.every((id) => dialogModelsHtml.includes(id))
   && dialogModelsHtml.includes(`${CONFIG.models.length}/16`))
+check('the default model is marked on its own row, not by a separate dropdown',
+  /dsh-iv-palrow" data-default="1"/u.test(dialogModelsHtml)
+  && !/dsh-iv-field-h[\s\S]{0,400}<select/u.test(dialogModelsHtml.split('dsh-iv-pal')[0]),
+  'the palette must be the only place the default is chosen')
+check('every non-default row offers to become the default',
+  dialogModelsHtml.includes('设为默认'))
+check('the tab explains that one list does both jobs',
+  dialogModelsHtml.includes('有哪些可选') && dialogModelsHtml.includes('默认用哪个'))
+// Help text is written with **emphasis**. Nothing renders markdown here, so an
+// unparsed marker shows up as literal asterisks on screen. Assert the rendered
+// DOM, across every dialog tab, not just the one that happens to be open.
+check('emphasis markers are rendered, never shown as literal asterisks',
+  !/<span class="dsh-iv-fhelp">[^<]*\*\*/u.test(domOf(dialogModelsHtml))
+  && !/<span class="dsh-iv-fhelp">[^<]*\*\*/u.test(domOf(dialogAdvancedHtml))
+  && /<span class="dsh-iv-fhelp">[^<]*<b>/u.test(domOf(dialogModelsHtml)),
+  'help text uses **...** and emph() must turn it into <b>')
 check('the advanced tab names the prompt model and the save directory',
   dialogAdvancedHtml.includes('写提示词的文本模型')
   && dialogAdvancedHtml.includes('保存目录')

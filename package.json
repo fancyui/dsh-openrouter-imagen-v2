@@ -24,7 +24,7 @@
     "url": "git+https://github.com/fancyui/dsh-openrouter-imagen.git"
   },
   "scripts": {
-    "check": "node --check lib/index.js && node --check lib/client.js && node --check lib/skills.js && node --check lib/store.js",
+    "check": "node --check lib/index.js && node --check lib/client.js && node --check lib/skills.js && node --check lib/store.js && node --check lib/image-size.js",
     "smoke": "node smoke.mjs",
     "preview": "node preview.mjs",
     "load": "node preflight-load.mjs",

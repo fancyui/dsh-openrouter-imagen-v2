@@ -548,6 +548,172 @@ check('a reference file outside the session workspace is refused', rejectedEscap
     batch)
 }
 
+/* ---- what a delivered picture ACTUALLY is ---- */
+
+/**
+ * The receipt used to be an echo of the request.
+ *
+ * `render` printed the resolution tier and the aspect ratio out of the outbound
+ * body, so 「参数：2K · 16:9」 described what was ASKED for — read from the same
+ * object the request was built out of, so it could not be wrong and could not be
+ * informative. A 2K 16:9 call came back 1536×864 and the receipt still said 2K;
+ * finding that out needed a shell and a PNG header reader.
+ *
+ * So the shape is now read from the delivered bytes, printed, and compared with
+ * the shape that was ordered. Both halves are needed: a number nobody shows is
+ * a number nobody acts on, and a comparison nobody reports is a comparison
+ * nobody runs.
+ */
+{
+  const seam = provided.openrouterImagenV2
+  const sizeOf = typeof seam?.imageSize === 'function' ? seam.imageSize : () => null
+  const mismatchOf = typeof seam?.aspectMismatch === 'function' ? seam.aspectMismatch : () => null
+  const positive = typeof seam?.positiveInt === 'function' ? seam.positiveInt : () => 'the seam does not export it'
+
+  const be32 = (value) => { const b = Buffer.alloc(4); b.writeUInt32BE(value); return b }
+  const be16 = (value) => { const b = Buffer.alloc(2); b.writeUInt16BE(value); return b }
+
+  /** The 24 leading bytes of a PNG. Everything after IHDR is image data. */
+  const png = (width, height) => Buffer.concat([
+    Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]),
+    be32(13),
+    Buffer.from('IHDR', 'latin1'),
+    be32(width),
+    be32(height),
+    Buffer.from([0x08, 0x06, 0x00, 0x00, 0x00]),
+  ])
+
+  const jpegSegment = (marker, payload) =>
+    Buffer.concat([Buffer.from([0xff, marker]), be16(payload.length + 2), payload])
+
+  /** A JPEG whose SOF sits BEHIND an APP0 and a DHT — the offset is not fixed,
+   *  and DHT (0xC4) is the segment a lazy parser mistakes for a frame. */
+  const jpeg = (width, height, sof = 0xc0) => Buffer.concat([
+    Buffer.from([0xff, 0xd8]),
+    jpegSegment(0xe0, Buffer.alloc(16)),
+    jpegSegment(0xc4, Buffer.alloc(24)),
+    jpegSegment(sof, Buffer.concat([Buffer.from([0x08]), be16(height), be16(width), Buffer.from([0x03, 0x01, 0x11, 0x00])])),
+  ])
+
+  const gif = (width, height) => {
+    const b = Buffer.alloc(13)
+    b.write('GIF89a', 0, 'latin1')
+    b.writeUInt16LE(width, 6)
+    b.writeUInt16LE(height, 8)
+    return b
+  }
+
+  const deep = (actual, width, height) => actual?.width === width && actual?.height === height
+  const shown = (value) => JSON.stringify(value ?? null)
+
+  check('the plugin reads a PNG\'s dimensions out of its own header',
+    deep(sizeOf(png(1536, 864)), 1536, 864), shown(sizeOf(png(1536, 864))))
+  check('it reads them from a plain Uint8Array as well as a Buffer',
+    deep(sizeOf(new Uint8Array(png(1536, 864))), 1536, 864))
+  check('it walks JPEG segments to the frame, skipping the ones that only look like one',
+    deep(sizeOf(jpeg(1200, 628)), 1200, 628) && deep(sizeOf(jpeg(800, 600, 0xc2)), 800, 600),
+    `${shown(sizeOf(jpeg(1200, 628)))} / ${shown(sizeOf(jpeg(800, 600, 0xc2)))}`)
+  check('it reads a GIF screen descriptor', deep(sizeOf(gif(640, 480)), 640, 480), shown(sizeOf(gif(640, 480))))
+
+  // WebP has three container variants with bit-packed 14-bit fields. A wrong
+  // number is worse than no number, so this must be UNKNOWN, not a guess.
+  const webp = Buffer.concat([
+    Buffer.from('RIFF'), be32(20), Buffer.from('WEBPVP8 '), be32(16), Buffer.from([0x00, 0x00, 0x00]),
+  ])
+  check('an unreadable container reports UNKNOWN instead of guessing', sizeOf(webp) === null, shown(sizeOf(webp)))
+  check('garbage, an empty buffer and a truncated header all report UNKNOWN without throwing',
+    sizeOf(Buffer.from([0x00, 0x01, 0x02, 0x03])) === null
+    && sizeOf(Buffer.alloc(0)) === null
+    && sizeOf(png(1536, 864).subarray(0, 20)) === null
+    && sizeOf('not bytes at all') === null)
+  check('a header claiming 0×0 is refused rather than written into a record',
+    sizeOf(png(0, 0)) === null, shown(sizeOf(png(0, 0))))
+
+  /* ---- the comparison that turns the number into a warning ---- */
+
+  const asked = (aspect, images) => mismatchOf(aspect, images)
+
+  check('a delivered 16:9 picture does not warn against a 16:9 request',
+    asked('16:9', [{ width: 1536, height: 864 }]) === null)
+  check('a real substitution is caught — 1200×628 is 1.91, not 1.78',
+    asked('16:9', [{ width: 1200, height: 628 }]) !== null,
+    shown(asked('16:9', [{ width: 1200, height: 628 }])))
+  check('a square delivered against a 16:9 request is caught',
+    asked('16:9', [{ width: 1024, height: 1024 }]) !== null)
+  check('`auto` promised no shape, so nothing can contradict it',
+    asked('auto', [{ width: 1024, height: 1024 }]) === null)
+  check('a typo is not a promise either',
+    asked('wide', [{ width: 1024, height: 1024 }]) === null
+    && asked(undefined, [{ width: 1, height: 9 }]) === null
+    && asked('16:9', []) === null)
+  check('an UNKNOWN size is silence, not a false alarm',
+    asked('16:9', [{ width: null, height: null }]) === null
+    && asked('16:9', [{ width: 1536, height: null }]) === null)
+  // Either side of the 2% line: 1.5% of drift is rounding, 2.5% is a different
+  // picture. A tolerance test that only tries the extremes proves nothing.
+  check('1.5% of drift stays quiet while 2.5% is reported',
+    asked('16:9', [{ width: 1513, height: 864 }]) === null
+    && asked('16:9', [{ width: 1574, height: 864 }]) !== null)
+
+  /* ---- the receipt itself ---- */
+
+  const renderText = (images) => {
+    if (typeof tool?.output?.render !== 'function') return ''
+    const blocks = tool.output.render({}, {
+      ok: true,
+      model: 'test/model',
+      seed: 42,
+      seedRandom: false,
+      params: { resolution: '2K', aspect_ratio: '16:9', quality: 'high', output_format: 'png', count: 1 },
+      cost: 0.0097,
+      elapsedMs: 19000,
+      outputDir: join(dir, 'generated-images'),
+      images,
+    })
+    const block = (Array.isArray(blocks) ? blocks : []).find((entry) => entry?.type === 'text')
+    if (Array.isArray(block?.text)) return block.text.join('')
+    return String(block?.text ?? '')
+  }
+
+  const at = join(dir, 'generated-images', 'hero.png')
+  const named = { filePath: at, filePathRelative: 'generated-images/hero.png' }
+
+  const sized = renderText([{ ...named, width: 1536, height: 864 }])
+  check('the receipt states the DELIVERED size', sized.split('\n').includes('尺寸：1536×864'), sized)
+  check('the requested tier and the delivered pixels are both on the receipt, so they can be compared by eye',
+    /参数：2K · 16:9 · high · png/u.test(sized) && /尺寸：1536×864/u.test(sized), sized)
+
+  const substituted = renderText([{ ...named, width: 1200, height: 628 }])
+  check('a shape that is not the one ordered is called out in words',
+    /注意：请求画幅 16:9，实际交付 1200×628/u.test(substituted), substituted)
+  check('a matching shape gets no warning', !renderText([{ ...named, width: 1536, height: 864 }]).includes('注意：'))
+
+  const unknown = renderText([named])
+  check('an UNKNOWN size prints no size line, and no placeholder either',
+    !unknown.includes('尺寸：') && !unknown.includes('undefined') && !unknown.includes('null'), unknown)
+  check('a NaN dimension never reaches the receipt', !renderText([{ ...named, width: NaN, height: NaN }]).includes('NaN'))
+
+  /* ---- the NaN that got here in the first place ---- */
+
+  check('a width the attachment store did not provide stays null instead of becoming NaN',
+    positive(undefined) === null && positive(null) === null && positive(NaN) === null && positive(0) === null,
+    `${String(positive(undefined))} / ${String(positive(NaN))} / ${String(positive(0))}`)
+  check('a width that IS there passes through untouched',
+    positive(1536) === 1536 && positive('864') === 864)
+
+  // `positiveInt` existing is not the fix; the CALL SITE using it is. That line
+  // only runs against a live attachment store, which this file has no way to
+  // fake, so the wiring is asserted from the source — the same escape hatch the
+  // neighbouring blocks use for what they cannot run.
+  const source = readFileSync(new URL('./lib/index.js', import.meta.url), 'utf8')
+  check('the attachment width is read null-safely at the call site, not with a bare Number()',
+    /width: positiveInt\(ref\.width\)/u.test(source) && !/width: Number\(ref\.width\)/u.test(source))
+  check('the decoded size reaches the record and the routes, not the attachment\'s copy',
+    /const decoded = imageSize\(bytes\)/u.test(source)
+    && /width: image\.width/u.test(source)
+    && !/width: image\.attachment\?\.width/u.test(source))
+}
+
 /* ---- refusals that must cost nothing ---- */
 
 /**

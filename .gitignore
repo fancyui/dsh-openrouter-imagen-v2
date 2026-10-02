@@ -1,0 +1,5 @@
+node_modules/
+preview/*.png
+
+# Local diagnostics
+*.log

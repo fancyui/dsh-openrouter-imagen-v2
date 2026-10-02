@@ -1,0 +1,219 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>dsh-openrouter-imagen v2 — 设置弹窗（真实组件渲染）</title>
+<style>:root{
+  --dsw-alias-label-primary:#171717;--dsw-alias-label-secondary:#6b7280;
+  --dsw-alias-border-l1:#e5e5e5;--dsw-alias-border-l2:#d4d4d4;
+  --dsw-alias-bg-base:#ffffff;--dsw-alias-bg-layer-1:#fcfcfc;--dsw-alias-bg-layer-2:#f4f4f5;
+  --dsw-alias-brand-primary:#0b6cff;--dsw-alias-state-error-primary:#d92d20;
+  --dsw-alias-state-success-primary:#12b76a;--dsw-alias-state-warn-primary:#f79009;
+  --dsw-alias-state-idle-primary:#a3a3a3;
+}
+body{margin:0;background:#e9eaee;font-family:"Segoe UI","Microsoft YaHei",system-ui,sans-serif}
+.shell{display:flex;height:840px;margin:20px;border:1px solid var(--dsw-alias-border-l2);border-radius:14px;overflow:hidden;background:#fff;box-shadow:0 10px 30px rgba(15,23,42,.10)}
+.side{width:238px;flex:0 0 238px;background:#f7f7f8;border-right:1px solid var(--dsw-alias-border-l1);padding:14px 8px}
+.side h4{margin:0 6px 8px;font-size:11px;letter-spacing:.04em;text-transform:uppercase;color:var(--dsw-alias-label-secondary)}
+.mainpane{flex:1 1 auto;min-width:0;display:flex;flex-direction:column}
+
+
+.dsh-iv-root{display:flex;flex-direction:column;height:100%;min-height:0;color:var(--dsw-alias-label-primary);font-size:13px;line-height:1.5;background:var(--dsw-alias-bg-base)}
+.dsh-iv-head{display:flex;align-items:center;gap:10px;padding:10px 16px;flex:0 0 auto;border-bottom:1px solid var(--dsw-alias-border-l1)}
+.dsh-iv-dot{width:7px;height:7px;border-radius:50%;background:var(--dsw-alias-state-idle-primary);flex:0 0 auto}
+.dsh-iv-dot[data-state="busy"]{background:var(--dsw-alias-state-warn-primary);animation:dsh-iv-pulse 1.1s ease-in-out infinite}
+.dsh-iv-dot[data-state="ok"]{background:var(--dsw-alias-state-success-primary)}
+.dsh-iv-dot[data-state="err"]{background:var(--dsw-alias-state-error-primary)}
+@keyframes dsh-iv-pulse{50%{opacity:.35}}
+.dsh-iv-title{font-size:14px;font-weight:650;margin:0}
+.dsh-iv-meta{color:var(--dsw-alias-label-secondary);font-size:12px;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.dsh-iv-spacer{flex:1 1 auto}
+.dsh-iv-chip{display:inline-flex;align-items:center;gap:5px;border:1px solid var(--dsw-alias-border-l1);background:var(--dsw-alias-bg-layer-1);border-radius:999px;padding:3px 10px;font-size:11.5px;color:var(--dsw-alias-label-secondary);white-space:nowrap;max-width:100%;overflow:hidden}
+.dsh-iv-chip b{color:var(--dsw-alias-label-primary);font-weight:600;overflow:hidden;text-overflow:ellipsis}
+.dsh-iv-chip-ok{border-color:#a7e8c4;background:#f0fdf5;color:#067647}
+.dsh-iv-chip-err{border-color:#fda29b;background:#fef3f2;color:#b42318}
+
+.dsh-iv-btn{border:1px solid var(--dsw-alias-border-l2);background:var(--dsw-alias-bg-layer-1);color:var(--dsw-alias-label-primary);border-radius:999px;padding:5px 13px;font:inherit;font-size:12.5px;cursor:pointer;white-space:nowrap}
+.dsh-iv-btn:hover:not([disabled]){border-color:var(--dsw-alias-brand-primary);color:var(--dsw-alias-brand-primary)}
+.dsh-iv-btn[disabled]{opacity:.5;cursor:not-allowed}
+.dsh-iv-btn-ghost{background:transparent;border-color:transparent;color:var(--dsw-alias-label-secondary);padding:4px 9px}
+.dsh-iv-btn-ghost:hover:not([disabled]){background:var(--dsw-alias-bg-layer-2);color:var(--dsw-alias-label-primary)}
+.dsh-iv-btn-primary{background:var(--dsw-alias-brand-primary);border-color:var(--dsw-alias-brand-primary);color:#fff;font-weight:600}
+.dsh-iv-btn-primary:hover:not([disabled]){background:#0a5fe0;border-color:#0a5fe0;color:#fff}
+.dsh-iv-btn-sm{padding:4px 10px;font-size:11.5px}
+
+/* ---- two columns with a draggable split ---- */
+.dsh-iv-work{flex:1 1 auto;display:flex;min-height:0;min-width:0}
+.dsh-iv-left{flex:0 0 var(--dsh-iv-left,60%);width:var(--dsh-iv-left,60%);min-width:340px;display:flex;flex-direction:column;min-height:0;background:var(--dsw-alias-bg-layer-1)}
+.dsh-iv-right{flex:1 1 auto;min-width:300px;display:flex;flex-direction:column;min-height:0;background:var(--dsw-alias-bg-layer-1)}
+.dsh-iv-split{flex:0 0 6px;position:relative;cursor:col-resize;background:transparent;border:0;padding:0;margin:0}
+.dsh-iv-split::before{content:"";position:absolute;inset:0 2px;background:var(--dsw-alias-border-l1)}
+.dsh-iv-split:hover::before,.dsh-iv-split:focus-visible::before,.dsh-iv-split[data-drag="1"]::before{background:var(--dsw-alias-brand-primary)}
+.dsh-iv-split::after{content:"";position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);width:2px;height:34px;border-radius:2px;background:var(--dsw-alias-border-l2)}
+.dsh-iv-split:hover::after,.dsh-iv-split[data-drag="1"]::after{background:var(--dsw-alias-brand-primary)}
+body[data-dsh-iv-resizing-x]{cursor:col-resize;user-select:none}
+.dsh-iv-hsplit{flex:0 0 7px;position:relative;cursor:row-resize;background:var(--dsw-alias-bg-base);border:0;padding:0;margin:0;border-top:1px solid var(--dsw-alias-border-l1)}
+.dsh-iv-hsplit::after{content:"";position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);width:34px;height:2px;border-radius:2px;background:var(--dsw-alias-border-l2)}
+.dsh-iv-hsplit:hover::after,.dsh-iv-hsplit:focus-visible::after,.dsh-iv-hsplit[data-drag="1"]::after{background:var(--dsw-alias-brand-primary)}
+body[data-dsh-iv-resizing-y]{cursor:row-resize;user-select:none}
+
+/* ---- picture area ---- */
+.dsh-iv-stage{flex:1 1 auto;display:flex;flex-direction:column;min-height:0}
+.dsh-iv-stagehead{display:flex;align-items:center;gap:8px;padding:9px 14px;flex:0 0 auto;border-bottom:1px solid var(--dsw-alias-border-l1);flex-wrap:wrap}
+.dsh-iv-stagebody{flex:1 1 auto;min-height:220px;padding:14px;display:grid;place-items:center;background-image:linear-gradient(45deg,rgba(0,0,0,.022) 25%,transparent 25%,transparent 75%,rgba(0,0,0,.022) 75%),linear-gradient(45deg,rgba(0,0,0,.022) 25%,transparent 25%,transparent 75%,rgba(0,0,0,.022) 75%);background-size:22px 22px;background-position:0 0,11px 11px}
+.dsh-iv-figure{margin:0;display:flex;flex-direction:column;align-items:center;gap:9px;max-width:100%;max-height:100%;min-height:0}
+.dsh-iv-img{max-width:100%;max-height:100%;min-height:0;object-fit:contain;border-radius:10px;border:1px solid var(--dsw-alias-border-l1);background:var(--dsw-alias-bg-base);box-shadow:0 6px 22px rgba(15,23,42,.10);cursor:zoom-in;display:block}
+.dsh-iv-cap{display:flex;align-items:center;gap:6px;flex-wrap:wrap;justify-content:center;font-size:11.5px;color:var(--dsw-alias-label-secondary);max-width:100%}
+.dsh-iv-cap code{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:10.5px;background:var(--dsw-alias-bg-base);border:1px solid var(--dsw-alias-border-l1);border-radius:5px;padding:1px 6px}
+.dsh-iv-strip{flex:0 0 auto;display:flex;align-items:center;gap:8px;padding:9px 14px;overflow-x:auto;border-top:1px solid var(--dsw-alias-border-l1);background:var(--dsw-alias-bg-base);min-height:0}
+.dsh-iv-striplabel{flex:0 0 auto;font-size:10.5px;font-weight:650;letter-spacing:.03em;text-transform:uppercase;color:var(--dsw-alias-label-secondary);margin-right:2px}
+.dsh-iv-thumb{position:relative;width:54px;height:54px;flex:0 0 auto;border-radius:8px;overflow:hidden;border:1px solid var(--dsw-alias-border-l1);background:var(--dsw-alias-bg-layer-2);padding:0;cursor:pointer;font:inherit;line-height:0;opacity:.72;transition:opacity .14s ease}
+.dsh-iv-thumb:hover{opacity:1}
+.dsh-iv-thumb img{width:100%;height:100%;object-fit:cover;display:block}
+.dsh-iv-thumb[aria-current="true"]{border-color:var(--dsw-alias-brand-primary);border-width:2px;opacity:1}
+.dsh-iv-thumbtag{position:absolute;left:2px;bottom:2px;background:rgba(17,24,39,.75);color:#fff;border-radius:4px;padding:0 4px;font-size:9px;font-weight:600;line-height:13px}
+.dsh-iv-more{flex:0 0 auto;font-size:11px;color:var(--dsw-alias-label-secondary);white-space:nowrap}
+
+/* ---- parameters ---- */
+.dsh-iv-params{flex:0 0 auto;height:var(--dsh-iv-params,236px);border-top:1px solid var(--dsw-alias-border-l1);background:var(--dsw-alias-bg-base);display:flex;flex-direction:column;min-height:0}
+.dsh-iv-panehead{display:flex;align-items:center;gap:8px;padding:8px 14px;flex:0 0 auto;border-bottom:1px solid var(--dsw-alias-border-l1);font-size:12px;font-weight:650;color:var(--dsw-alias-label-secondary);letter-spacing:.02em}
+.dsh-iv-paramsbody{flex:1 1 auto;overflow:auto;min-height:0;padding:10px 14px 12px;display:flex;flex-direction:column;gap:9px}
+.dsh-iv-row{display:flex;align-items:center;gap:10px;min-width:0}
+.dsh-iv-label{flex:0 0 72px;font-size:12px;color:var(--dsw-alias-label-secondary)}
+.dsh-iv-ctl{flex:1 1 auto;min-width:0;display:flex;gap:6px;align-items:center}
+.dsh-iv-ratios{display:flex;flex-wrap:wrap;gap:5px}
+.dsh-iv-ratio{min-width:42px;border:1px solid var(--dsw-alias-border-l1);border-radius:7px;background:var(--dsw-alias-bg-base);cursor:pointer;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;padding:4px 5px;font:inherit;line-height:1}
+.dsh-iv-ratio:hover{border-color:var(--dsw-alias-border-l2)}
+.dsh-iv-ratio[aria-pressed="true"]{border-color:var(--dsw-alias-brand-primary);background:#f2f7ff}
+.dsh-iv-ratio span:first-child{display:block;border:1.5px solid var(--dsw-alias-label-secondary);border-radius:2px}
+.dsh-iv-ratio[aria-pressed="true"] span:first-child{border-color:var(--dsw-alias-brand-primary)}
+.dsh-iv-rationum{font-size:9.5px;font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;color:var(--dsw-alias-label-secondary);white-space:nowrap}
+.dsh-iv-ratio[aria-pressed="true"] .dsh-iv-rationum{color:var(--dsw-alias-brand-primary);font-weight:700}
+.dsh-iv-seg{display:flex;gap:3px;background:var(--dsw-alias-bg-layer-2);border-radius:8px;padding:3px;border:1px solid var(--dsw-alias-border-l1);flex:1 1 auto;min-width:0}
+.dsh-iv-seg button{flex:1 1 0;border:0;background:transparent;border-radius:6px;padding:4px 6px;font:inherit;font-size:11.5px;cursor:pointer;color:var(--dsw-alias-label-secondary);white-space:nowrap}
+.dsh-iv-seg button[aria-pressed="true"]{background:var(--dsw-alias-bg-base);color:var(--dsw-alias-label-primary);font-weight:600;box-shadow:0 1px 2px rgba(15,23,42,.08)}
+.dsh-iv-switch{position:relative;display:inline-block;width:38px;height:21px;flex:0 0 auto;cursor:pointer}
+.dsh-iv-switch input{position:absolute;opacity:0;width:100%;height:100%;margin:0;cursor:pointer}
+.dsh-iv-track{position:absolute;inset:0;border-radius:999px;background:var(--dsw-alias-border-l2);border:1px solid var(--dsw-alias-border-l1);transition:background .18s ease,border-color .18s ease}
+.dsh-iv-track::after{content:"";position:absolute;top:2px;left:2px;width:15px;height:15px;border-radius:50%;background:#fff;box-shadow:0 1px 2px rgba(0,0,0,.25);transition:left .18s ease}
+.dsh-iv-switch input:checked + .dsh-iv-track{background:var(--dsw-alias-brand-primary);border-color:var(--dsw-alias-brand-primary)}
+.dsh-iv-switch input:checked + .dsh-iv-track::after{left:19px}
+.dsh-iv-pfoot{flex:0 0 auto;border-top:1px solid var(--dsw-alias-border-l1);padding:8px 14px;display:flex;flex-direction:column;gap:5px;background:var(--dsw-alias-bg-layer-1)}
+.dsh-iv-cost{font-size:11.5px;color:var(--dsw-alias-label-secondary);display:flex;justify-content:space-between;gap:8px}
+.dsh-iv-cost b{color:var(--dsw-alias-label-primary);font-weight:600}
+
+input.dsh-iv-in,select.dsh-iv-in,textarea.dsh-iv-in{width:100%;border:1px solid var(--dsw-alias-border-l1);border-radius:9px;background:var(--dsw-alias-bg-base);color:var(--dsw-alias-label-primary);font:inherit;font-size:12.5px;padding:7px 9px;outline:none;line-height:1.5}
+input.dsh-iv-in:focus,select.dsh-iv-in:focus,textarea.dsh-iv-in:focus{border-color:var(--dsw-alias-brand-primary)}
+textarea.dsh-iv-in{resize:vertical;min-height:62px;font-family:inherit}
+textarea.dsh-iv-in[data-mono="1"]{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:12px;line-height:1.55}
+
+/* ---- conversation column ---- */
+.dsh-iv-convo{flex:1 1 auto;display:flex;flex-direction:column;min-height:0}
+.dsh-iv-scroll{flex:1 1 auto;overflow:auto;min-height:0;padding:12px 14px;display:flex;flex-direction:column;gap:11px}
+.dsh-iv-msg{display:flex;flex-direction:column;gap:5px;max-width:100%}
+.dsh-iv-role{font-size:11px;font-weight:650;color:var(--dsw-alias-label-secondary)}
+.dsh-iv-body{border:1px solid var(--dsw-alias-border-l1);border-radius:11px;padding:8px 11px;background:var(--dsw-alias-bg-base);white-space:pre-wrap;word-break:break-word;font-size:12.5px}
+.dsh-iv-msg-user .dsh-iv-body{background:#eef4ff;border-color:#cfe0ff}
+.dsh-iv-note{font-size:11.5px;color:var(--dsw-alias-label-secondary)}
+.dsh-iv-prompt{border:1px solid #cfe0ff;background:#f7faff;border-radius:11px;overflow:hidden}
+.dsh-iv-prompthead{display:flex;align-items:center;gap:7px;padding:6px 11px;font-size:11.5px;font-weight:650;color:#1d4ed8;background:#eef4ff;border-bottom:1px solid #cfe0ff}
+.dsh-iv-promptbody{padding:8px 11px;font-size:12px;white-space:pre-wrap;word-break:break-word;font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;line-height:1.55;max-height:260px;overflow:auto}
+.dsh-iv-promptfoot{display:flex;align-items:center;gap:7px;flex-wrap:wrap;padding:6px 11px;border-top:1px solid #cfe0ff;background:#f7faff}
+.dsh-iv-paramsline{display:flex;align-items:center;gap:6px;flex-wrap:wrap;font-size:11.5px;color:var(--dsw-alias-label-secondary);min-width:0}
+.dsh-iv-tool{display:flex;align-items:center;gap:8px;padding:7px 11px;border:1px dashed var(--dsw-alias-border-l2);border-radius:10px;background:var(--dsw-alias-bg-base);font-size:12px;color:var(--dsw-alias-label-secondary)}
+.dsh-iv-spin{width:11px;height:11px;border:2px solid var(--dsw-alias-border-l2);border-top-color:var(--dsw-alias-brand-primary);border-radius:50%;flex:0 0 auto;animation:dsh-iv-spin .8s linear infinite}
+@keyframes dsh-iv-spin{to{transform:rotate(360deg)}}
+.dsh-iv-err{border:1px solid #fda29b;background:#fef3f2;color:#b42318;border-radius:10px;padding:8px 11px;font-size:12px;white-space:pre-wrap;word-break:break-word}
+
+.dsh-iv-compose{flex:0 0 auto;border-top:1px solid var(--dsw-alias-border-l1);padding:12px 12px 14px;display:flex;flex-direction:column;gap:9px;background:var(--dsw-alias-bg-base)}
+.dsh-iv-tabs{display:flex;gap:4px;background:var(--dsw-alias-bg-layer-2);border-radius:9px;padding:3px;border:1px solid var(--dsw-alias-border-l1)}
+.dsh-iv-tabs button{flex:1 1 0;border:0;background:transparent;border-radius:7px;padding:5px 8px;font:inherit;font-size:12px;cursor:pointer;color:var(--dsw-alias-label-secondary)}
+.dsh-iv-tabs button[aria-pressed="true"]{background:var(--dsw-alias-bg-base);color:var(--dsw-alias-label-primary);font-weight:600;box-shadow:0 1px 2px rgba(15,23,42,.08)}
+.dsh-iv-field{display:flex;flex-direction:column;gap:5px;min-width:0}
+.dsh-iv-fieldlabel{font-size:11.5px;font-weight:600;color:var(--dsw-alias-label-secondary)}
+.dsh-iv-hint{font-size:11px;color:var(--dsw-alias-label-secondary);line-height:1.45}
+.dsh-iv-refs{display:flex;align-items:center;gap:7px;flex-wrap:wrap}
+.dsh-iv-ref{position:relative;width:44px;height:44px;border-radius:9px;overflow:hidden;border:1px solid var(--dsw-alias-border-l1);flex:0 0 auto;background:var(--dsw-alias-bg-layer-2)}
+.dsh-iv-ref img{width:100%;height:100%;object-fit:cover;display:block}
+.dsh-iv-refx{position:absolute;top:1px;right:1px;width:15px;height:15px;border-radius:50%;border:0;background:rgba(17,24,39,.72);color:#fff;font-size:10px;line-height:15px;text-align:center;cursor:pointer;padding:0;font-family:inherit}
+.dsh-iv-refadd{width:44px;height:44px;border-radius:9px;border:1px dashed var(--dsw-alias-border-l2);background:transparent;color:var(--dsw-alias-label-secondary);cursor:pointer;font-size:17px;line-height:1;flex:0 0 auto;font-family:inherit}
+.dsh-iv-actions{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-top:6px}
+.dsh-iv-actions .dsh-iv-spacer{flex:1 1 auto}
+
+/* ---- empty / skeleton ---- */
+.dsh-iv-empty{display:grid;place-items:center;text-align:center;padding:12px;max-width:440px}
+.dsh-iv-emptyin{display:flex;flex-direction:column;align-items:center;gap:10px;max-width:392px}
+.dsh-iv-emptyico{width:46px;height:46px;border-radius:14px;background:var(--dsw-alias-bg-layer-2);display:grid;place-items:center;color:var(--dsw-alias-label-secondary)}
+.dsh-iv-empty h3{margin:0;font-size:14px;font-weight:650}
+.dsh-iv-empty p{margin:0;color:var(--dsw-alias-label-secondary);font-size:12.5px;line-height:1.55}
+.dsh-iv-hintrow{display:flex;flex-direction:column;gap:6px;width:100%;text-align:left}
+.dsh-iv-sugg{display:flex;gap:8px;align-items:flex-start;border:1px solid var(--dsw-alias-border-l1);border-radius:9px;padding:7px 10px;background:var(--dsw-alias-bg-base);font-size:12px;color:var(--dsw-alias-label-secondary);cursor:pointer;text-align:left;font-family:inherit;width:100%}
+.dsh-iv-sugg:hover{border-color:var(--dsw-alias-brand-primary);color:var(--dsw-alias-label-primary)}
+.dsh-iv-sugg b{color:var(--dsw-alias-label-primary);font-weight:600}
+.dsh-iv-sk{width:100%;max-width:420px;border:1px solid var(--dsw-alias-border-l1);border-radius:12px;overflow:hidden;background:var(--dsw-alias-bg-base);display:flex;flex-direction:column}
+.dsh-iv-skshot{aspect-ratio:1/1;background:linear-gradient(100deg,var(--dsw-alias-bg-layer-2) 30%,#eceef1 50%,var(--dsw-alias-bg-layer-2) 70%);background-size:220% 100%;animation:dsh-iv-shimmer 1.35s ease-in-out infinite}
+@keyframes dsh-iv-shimmer{to{background-position:-120% 0}}
+.dsh-iv-skcap{padding:9px 11px;font-size:12px;color:var(--dsw-alias-label-secondary)}
+
+/* ---- lightbox ---- */
+.dsh-iv-lb{position:fixed;inset:0;background:rgba(9,12,18,.82);display:none;place-items:center;z-index:60;padding:40px}
+.dsh-iv-lb[data-open="1"]{display:grid}
+.dsh-iv-lb img{max-width:min(1100px,92vw);max-height:80vh;border-radius:10px;box-shadow:0 20px 60px rgba(0,0,0,.5);background:#fff}
+.dsh-iv-lbbar{margin-top:12px;display:flex;gap:8px;align-items:center;flex-wrap:wrap;justify-content:center}
+.dsh-iv-lbbar .dsh-iv-chip{background:rgba(255,255,255,.1);border-color:rgba(255,255,255,.25);color:#e5e7eb}
+.dsh-iv-lbbar .dsh-iv-chip b{color:#fff}
+.dsh-iv-lbclose{position:absolute;top:18px;right:22px;border:1px solid rgba(255,255,255,.3);background:rgba(255,255,255,.08);color:#fff;border-radius:999px;padding:6px 14px;font:inherit;font-size:12.5px;cursor:pointer}
+
+/* ---- sidebar entry ---- */
+.dsh-iv-entry{display:flex;align-items:center;gap:9px;width:100%;padding:7px 9px;border-radius:8px;border:0;background:transparent;font:inherit;font-size:12.5px;color:var(--dsw-alias-label-primary);cursor:pointer;text-align:left}
+.dsh-iv-entry:hover{background:rgba(0,0,0,.05)}
+.dsh-iv-entry[aria-current="true"]{background:#eaf2ff;color:var(--dsw-alias-brand-primary);font-weight:600}
+.dsh-iv-entryicon{display:grid;place-items:center;flex:0 0 auto;color:var(--dsw-alias-label-secondary)}
+.dsh-iv-entry[aria-current="true"] .dsh-iv-entryicon{color:var(--dsw-alias-brand-primary)}
+.dsh-iv-entrytxt{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.dsh-iv-entrybadge{margin-left:auto;font-size:10.5px;font-weight:600;border-radius:999px;padding:1px 7px;background:var(--dsw-alias-bg-layer-2);color:var(--dsw-alias-label-secondary);border:1px solid var(--dsw-alias-border-l1)}
+
+/* ---- settings dialog ---- */
+.dsh-iv-modal{position:fixed;inset:0;background:rgba(9,12,18,.42);display:none;place-items:center;z-index:70;padding:32px}
+.dsh-iv-modal[data-open="1"]{display:grid}
+.dsh-iv-dialog{width:min(620px,94vw);max-height:86vh;display:flex;flex-direction:column;background:var(--dsw-alias-bg-layer-1);border:1px solid var(--dsw-alias-border-l1);border-radius:14px;box-shadow:0 24px 70px rgba(15,23,42,.32);overflow:hidden}
+.dsh-iv-dlghead{display:flex;align-items:center;gap:9px;padding:13px 18px;border-bottom:1px solid var(--dsw-alias-border-l1);flex:0 0 auto}
+.dsh-iv-dlghead h3{margin:0;font-size:14.5px;font-weight:650}
+.dsh-iv-dlgtabs{display:flex;gap:3px;padding:9px 18px 0;border-bottom:1px solid var(--dsw-alias-border-l1);flex:0 0 auto}
+.dsh-iv-dlgtabs button{border:0;background:transparent;font:inherit;font-size:12.5px;color:var(--dsw-alias-label-secondary);padding:7px 11px;cursor:pointer;border-bottom:2px solid transparent;margin-bottom:-1px}
+.dsh-iv-dlgtabs button[aria-pressed="true"]{color:var(--dsw-alias-brand-primary);font-weight:600;border-bottom-color:var(--dsw-alias-brand-primary)}
+.dsh-iv-dlgbody{flex:1 1 auto;overflow:auto;min-height:0;padding:16px 18px;display:flex;flex-direction:column;gap:14px}
+.dsh-iv-field-h{display:flex;flex-direction:column;gap:6px;min-width:0}
+.dsh-iv-flabel{font-size:12.5px;font-weight:600;display:flex;align-items:center;gap:7px}
+.dsh-iv-fhelp{font-size:11.5px;color:var(--dsw-alias-label-secondary);line-height:1.5}
+.dsh-iv-keyrow{display:flex;gap:7px;align-items:center;flex-wrap:wrap}
+.dsh-iv-keyrow input{flex:1 1 260px;min-width:0;font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}
+.dsh-iv-badge{font-size:10.5px;font-weight:650;border-radius:999px;padding:2px 8px;border:1px solid var(--dsw-alias-border-l1);background:var(--dsw-alias-bg-layer-2);color:var(--dsw-alias-label-secondary)}
+.dsh-iv-badge-ok{border-color:#a7e8c4;background:#f0fdf5;color:#067647}
+.dsh-iv-badge-err{border-color:#fda29b;background:#fef3f2;color:#b42318}
+.dsh-iv-badge-warn{border-color:#fedf89;background:#fffaeb;color:#b54708}
+.dsh-iv-dlgfoot{flex:0 0 auto;display:flex;align-items:center;gap:8px;padding:12px 18px;border-top:1px solid var(--dsw-alias-border-l1);background:var(--dsw-alias-bg-base)}
+.dsh-iv-report{border:1px solid var(--dsw-alias-border-l1);border-radius:9px;padding:8px 11px;font-size:12px;background:var(--dsw-alias-bg-base);color:var(--dsw-alias-label-secondary);line-height:1.55}
+.dsh-iv-report-ok{border-color:#a7e8c4;background:#f0fdf5;color:#067647}
+.dsh-iv-report-err{border-color:#fda29b;background:#fef3f2;color:#b42318}
+.dsh-iv-modelpick{display:flex;flex-direction:column;gap:6px;max-height:190px;overflow:auto;border:1px solid var(--dsw-alias-border-l1);border-radius:10px;padding:7px;background:var(--dsw-alias-bg-base)}
+.dsh-iv-modelrow{display:flex;align-items:center;gap:8px;padding:4px 6px;border-radius:7px;font-size:12px}
+.dsh-iv-modelrow:hover{background:var(--dsw-alias-bg-layer-2)}
+.dsh-iv-modelrow code{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:11px;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1 1 auto}
+.dsh-iv-modelrow[data-default="1"]{background:#eef4ff}
+.dsh-iv-addrow{display:flex;gap:7px;align-items:center}
+.dsh-iv-addrow input{flex:1 1 auto;min-width:0;font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}
+.dsh-iv-pal{display:flex;flex-direction:column;gap:5px}
+.dsh-iv-palrow{display:flex;align-items:center;gap:8px;font-size:12px;border:1px solid var(--dsw-alias-border-l1);border-radius:8px;padding:5px 9px;background:var(--dsw-alias-bg-base)}
+.dsh-iv-palrow code{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:11px;flex:1 1 auto;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+
+</style>
+</head>
+<body>
+<div class="shell">
+<div class="side"><h4>插件</h4><button type="button" class="dsh-iv-entry" aria-current="true" title="打开图像生成工作台"><span class="dsh-iv-entryicon"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="3" width="18" height="18" rx="3"></rect><circle cx="8.8" cy="8.8" r="1.7"></circle><path d="M21 15.5 16.2 11 7 20.2"></path></svg></span><span class="dsh-iv-entrytxt">图像生成</span></button></div>
+<div class="mainpane"><div class="dsh-iv-root"><div class="dsh-iv-head"><span class="dsh-iv-dot" data-state="idle"></span><h2 class="dsh-iv-title">图像生成</h2><span class="dsh-iv-meta">就绪 · 尚未生成</span><span class="dsh-iv-spacer"></span><span class="dsh-iv-chip">模型 <b>x-ai/grok-imagine-image-quality</b></span><span class="dsh-iv-chip dsh-iv-chip-ok">密钥 <b>已配置</b></span><button type="button" class="dsh-iv-btn dsh-iv-btn-sm" title="配置 API 密钥、模型与高级选项">设置</button></div><div class="dsh-iv-work"><div class="dsh-iv-left"><div class="dsh-iv-stage"><div class="dsh-iv-stagehead"><span class="dsh-iv-chip">本次 <b>2</b> 张</span><span class="dsh-iv-spacer"></span><button type="button" class="dsh-iv-btn dsh-iv-btn-ghost dsh-iv-btn-sm" title="在文件管理器里打开保存目录">打开文件夹</button><button type="button" class="dsh-iv-btn dsh-iv-btn-ghost dsh-iv-btn-sm">复制路径</button></div><div class="dsh-iv-stagebody"><figure class="dsh-iv-figure"><img class="dsh-iv-img" src="" alt="openrouter-20261012-093014-1.png"><div class="dsh-iv-cap"><code>816×816</code><code>673 KB</code><code>种子 1844679</code><span>openrouter-20261012-093014-1.png</span><button type="button" class="dsh-iv-btn dsh-iv-btn-sm">用同样参数再出</button><button type="button" class="dsh-iv-btn dsh-iv-btn-sm">复制路径</button></div></figure></div><div class="dsh-iv-strip"><span class="dsh-iv-striplabel">历史</span><button type="button" class="dsh-iv-thumb" title="openrouter-20261012-093014-1.png" aria-current="true"><img src="" alt="openrouter-20261012-093014-1.png"><span class="dsh-iv-thumbtag">1</span></button><button type="button" class="dsh-iv-thumb" title="openrouter-20261012-093014-2.png" aria-current="false"><img src="" alt="openrouter-20261012-093014-2.png"><span class="dsh-iv-thumbtag">2</span></button></div></div><button type="button" class="dsh-iv-hsplit" aria-label="调整参数区高度" title="拖动调整参数区高度"></button><div class="dsh-iv-params"><div class="dsh-iv-panehead"><span>参数</span><span class="dsh-iv-spacer"></span></div><div class="dsh-iv-paramsbody"><div class="dsh-iv-row"><span class="dsh-iv-label">画幅</span><span class="dsh-iv-ctl"><span class="dsh-iv-ratios"><button type="button" class="dsh-iv-ratio" title="交给模型（按提示词）" aria-pressed="false"><span></span><span class="dsh-iv-rationum">auto</span></button><button type="button" class="dsh-iv-ratio" title="画幅 1:1" aria-pressed="false"><span></span><span class="dsh-iv-rationum">1:1</span></button><button type="button" class="dsh-iv-ratio" title="画幅 16:9" aria-pressed="true"><span></span><span class="dsh-iv-rationum">16:9</span></button><button type="button" class="dsh-iv-ratio" title="画幅 9:16" aria-pressed="false"><span></span><span class="dsh-iv-rationum">9:16</span></button><button type="button" class="dsh-iv-ratio" title="画幅 4:3" aria-pressed="false"><span></span><span class="dsh-iv-rationum">4:3</span></button><button type="button" class="dsh-iv-ratio" title="画幅 3:4" aria-pressed="false"><span></span><span class="dsh-iv-rationum">3:4</span></button><button type="button" class="dsh-iv-ratio" title="画幅 3:2" aria-pressed="false"><span></span><span class="dsh-iv-rationum">3:2</span></button><button type="button" class="dsh-iv-ratio" title="画幅 2:3" aria-pressed="false"><span></span><span class="dsh-iv-rationum">2:3</span></button><button type="button" class="dsh-iv-ratio" title="画幅 4:5" aria-pressed="false"><span></span><span class="dsh-iv-rationum">4:5</span></button><button type="button" class="dsh-iv-ratio" title="画幅 5:4" aria-pressed="false"><span></span><span class="dsh-iv-rationum">5:4</span></button><button type="button" class="dsh-iv-ratio" title="画幅 21:9" aria-pressed="false"><span></span><span class="dsh-iv-rationum">21:9</span></button><button type="button" class="dsh-iv-ratio" title="画幅 9:21" aria-pressed="false"><span></span><span class="dsh-iv-rationum">9:21</span></button></span></span></div><div class="dsh-iv-row"><span class="dsh-iv-label">分辨率</span><span class="dsh-iv-ctl"><select class="dsh-iv-in" value="1K"><option value="auto">auto</option><option value="512">512</option><option value="1K">1K</option><option value="2K">2K</option><option value="4K">4K</option></select></span></div><div class="dsh-iv-row"><span class="dsh-iv-label">数量</span><span class="dsh-iv-ctl"><span class="dsh-iv-seg"><button type="button" aria-pressed="true">1</button><button type="button" aria-pressed="false">2</button><button type="button" aria-pressed="false">3</button><button type="button" aria-pressed="false">4</button></span></span></div><div class="dsh-iv-row"><span class="dsh-iv-label">质量</span><span class="dsh-iv-ctl"><span class="dsh-iv-seg"><button type="button" aria-pressed="false">auto</button><button type="button" aria-pressed="false">low</button><button type="button" aria-pressed="true">medium</button><button type="button" aria-pressed="false">high</button></span></span></div><div class="dsh-iv-row"><span class="dsh-iv-label">格式</span><span class="dsh-iv-ctl"><select class="dsh-iv-in" value="png"><option value="png">png</option><option value="jpeg">jpeg</option><option value="webp">webp</option></select></span></div><div class="dsh-iv-row"><span class="dsh-iv-label">背景</span><span class="dsh-iv-ctl"><select class="dsh-iv-in" value="auto"><option value="auto">auto</option><option value="transparent">transparent</option><option value="opaque">opaque</option></select></span></div><div class="dsh-iv-row"><span class="dsh-iv-label">种子</span><span class="dsh-iv-ctl"><input class="dsh-iv-in" value="" placeholder="留空 = 随机"><button type="button" class="dsh-iv-btn dsh-iv-btn-sm">随机</button></span></div><div class="dsh-iv-row"><span class="dsh-iv-label">模型</span><span class="dsh-iv-ctl"><select class="dsh-iv-in" value="x-ai/grok-imagine-image-quality"><option value="x-ai/grok-imagine-image-quality">x-ai/grok-imagine-image-quality</option><option value="google/gemini-2.5-flash-image">google/gemini-2.5-flash-image</option></select></span></div><div class="dsh-iv-row"><span class="dsh-iv-label">写提示词后先确认再出图</span><label class="dsh-iv-switch"><input type="checkbox"><span class="dsh-iv-track"></span></label></div></div><div class="dsh-iv-pfoot"><div class="dsh-iv-cost"><span>本次预计</span><b>1 张</b></div><div class="dsh-iv-cost"><span>历史记录</span><b>1 次</b></div></div></div></div><button type="button" class="dsh-iv-split" aria-label="调整两栏宽度" title="拖动调整宽度"></button><div class="dsh-iv-right"><div class="dsh-iv-convo"><div class="dsh-iv-panehead"><span>对话</span><span class="dsh-iv-spacer"></span><button type="button" class="dsh-iv-btn dsh-iv-btn-ghost dsh-iv-btn-sm">清空</button></div><div class="dsh-iv-scroll"><div class="dsh-iv-note">还没有生成。点「生成」后会先把要求写成提示词。</div></div><div class="dsh-iv-compose"><div class="dsh-iv-tabs"><button type="button" aria-pressed="false" title="直接出图：输入框里的文字就是最终提示词，直接发给图像模型，不经过对话模型">直接出图</button><button type="button" aria-pressed="true" title="让 AI 写提示词：先把要求交给对话模型扩写成专业提示词，提示词显示在对话里，可以改了重出">让 AI 写提示词</button></div><div class="dsh-iv-field"><span class="dsh-iv-fieldlabel">你的要求</span><textarea class="dsh-iv-in" data-mono="0" value="" placeholder="用日常说法就行"></textarea></div><div class="dsh-iv-refs"><button type="button" class="dsh-iv-refadd" title="添加参考图（也可以直接粘贴）">+</button><span class="dsh-iv-hint">参考图 0/4</span></div><div class="dsh-iv-actions"><button type="button" class="dsh-iv-btn dsh-iv-btn-primary" disabled>生成</button><button type="button" class="dsh-iv-btn" disabled>仅写提示词</button><span class="dsh-iv-spacer"></span><span class="dsh-iv-hint">1 张 · 1K · 16:9</span></div></div></div></div></div></div></div>
+</div>
+<div class="dsh-iv-modal" data-open="1"><div class="dsh-iv-dialog" role="dialog" aria-label="图像生成设置"><div class="dsh-iv-dlghead"><h3>图像生成设置</h3><span class="dsh-iv-spacer"></span><button type="button" class="dsh-iv-btn dsh-iv-btn-ghost dsh-iv-btn-sm">关闭</button></div><div class="dsh-iv-dlgtabs"><button type="button" aria-pressed="true">密钥</button><button type="button" aria-pressed="false">模型</button><button type="button" aria-pressed="false">高级</button></div><div class="dsh-iv-dlgbody"><div class="dsh-iv-field-h"><span class="dsh-iv-flabel">OpenRouter API Key <span class="dsh-iv-badge dsh-iv-badge-err">未配置</span></span><div class="dsh-iv-keyrow"><input class="dsh-iv-in" type="password" value="" autoComplete="off" placeholder="sk-or-v1-…"><button type="button" class="dsh-iv-btn dsh-iv-btn-sm">显示</button><button type="button" class="dsh-iv-btn dsh-iv-btn-sm" disabled>校验</button></div><span class="dsh-iv-fhelp">在 <b>openrouter.ai/keys</b> 生成，以 sk-or-v1- 开头。密钥只存在本机设置里，任何接口都不会把它读回来 —— 所以这里看到的是头尾预览，不是原文。</span></div><div class="dsh-iv-field-h"><span class="dsh-iv-flabel">不要重复输入</span><span class="dsh-iv-fhelp">一旦保存，密钥就不会再显示。要换一个就直接在上面的框里输入新的，保存即替换。</span></div></div><div class="dsh-iv-dlgfoot"><button type="button" class="dsh-iv-btn dsh-iv-btn-primary">保存</button><button type="button" class="dsh-iv-btn">取消</button><span class="dsh-iv-spacer"></span><span class="dsh-iv-hint">尚未配置密钥</span></div></div></div>
+</body>
+</html>

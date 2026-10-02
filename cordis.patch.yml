@@ -1,0 +1,41 @@
+# dsh-openrouter-imagen-v2 bundle patch
+#
+# This is the `dsh.bundle.patch` layer of the package. Installing through the
+# official CLI reconciles `dsh.profile.bundles` against installed packages and,
+# seeing this declaration, appends `dsh-openrouter-imagen-v2` to the bundle
+# stack; the profile boot then merges THIS patch (a single `insert` of the
+# plugin row), exactly like a manual cordis.patch.yml mount line.
+#
+# Manual mount (equivalent, if you are not using the CLI): add
+#
+#   - insert:
+#       - id: openrouter-imagen-v2
+#         name: 'dsh-openrouter-imagen-v2'
+#
+# to the profile's own cordis.patch.yml. Do not do both — two mounts register
+# the same web route prefix twice and duplicate (kind, path) throws at boot.
+#
+# `config` supplies the `base` layer of the plugin's settings namespace. The
+# user layer resolves above it, so editing this file only changes the defaults
+# a user has not overridden.
+#
+# NOTE: this is a SEPARATE plugin row from `dsh-openrouter-imagen` (v1) and uses
+# its own id, settings namespace (`openrouter-imagen-v2`), route prefix
+# (`/openrouter-imagen-v2/api`) and tool name. The two can be installed at the
+# same time.
+- insert:
+    - id: openrouter-imagen-v2
+      name: 'dsh-openrouter-imagen-v2'
+      config:
+        model: google/gemini-2.5-flash-image
+        resolution: 1K
+        aspectRatio: 16:9
+        quality: medium
+        outputFormat: png
+        count: 1
+        background: auto
+        seed: ''
+        confirmPrompt: false
+        splitRatio: 0.6
+        paramsHeight: 236
+        saveDir: generated-images
